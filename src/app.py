@@ -1,74 +1,166 @@
+from __future__ import annotations
+
 import os
-import argparse
-from dotenv import load_dotenv
-from importer_chatgpt_html import import_chat_html
+from pathlib import Path
+from typing import Any
 
-from chatvault_db import connect, get_or_create_project, attach_conversation_to_project
-from importer_chatgpt import import_conversations_json
-from webui import make_app
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+try:
+    from .chatvault_db import add_tag, connect, get_messages, search_messages
+except Exception:  # pragma: no cover
+    from chatvault_db import add_tag, connect, get_messages, search_messages
 
 
-def main():
-    load_dotenv()
-    db_path = os.getenv("CHATVAULT_DB", "chatvault.sqlite3")
+class TagPayload(BaseModel):
+    tag: str
 
-    parser = argparse.ArgumentParser("chatvault2")
-    sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_import = sub.add_parser("import", help="Import ChatGPT conversations.json")
-    p_import.add_argument("--conversations-json", required=True)
-    p_import.add_argument("--project", default="Unsorted", help="Project to attach ALL imported chats to (default Unsorted)")
-    p_import_html = sub.add_parser("import-html", help="Import ChatGPT chat.html (fallback)")
-    p_import_html.add_argument("--chat-html", required=True)
-    p_import_html.add_argument("--project", default="Unsorted")
+def _root_dir() -> Path:
+    return Path(__file__).resolve().parent.parent
 
-    p_run = sub.add_parser("run", help="Run the local web UI")
-    p_run.add_argument("--host", default="127.0.0.1")
-    p_run.add_argument("--port", type=int, default=8000)
-    
-    args = parser.parse_args()
-    con = connect(db_path)
 
-    if args.cmd == "import":
-        stats = import_conversations_json(con, args.conversations_json)
-        # attach all imported chats into a chosen project as a holding pen (manual sorting later)
-        pid = get_or_create_project(con, args.project)
-        # attach by external_id match: easiest is attach everything currently unassigned
+def _snippet(text: str, max_len: int = 220) -> str:
+    s = (text or "").strip()
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
+def make_app(db_path: str | None = None) -> FastAPI:
+    app = FastAPI(title="ChatVault Dashboard")
+    con = connect(db_path or os.getenv("CHATVAULT_DB", "chatvault.sqlite3"))
+
+    root = _root_dir()
+    templates_dir = root / "templates"
+    static_dir = root / "static"
+
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> HTMLResponse:
+        html = (templates_dir / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(html)
+
+    @app.get("/api/search")
+    def api_search(q: str, limit: int = 25) -> list[dict[str, Any]]:
+        query = (q or "").strip()
+        if not query:
+            return []
+        rows = search_messages(con, query=query, limit=max(1, min(int(limit), 200)))
+        out: list[dict[str, Any]] = []
+        for message_id, conversation_id, title, role, snippet in rows:
+            out.append(
+                {
+                    "message_id": int(message_id),
+                    "conversation_id": int(conversation_id),
+                    "conversation_title": title,
+                    "role": role,
+                    "snippet": snippet,
+                }
+            )
+        return out
+
+    @app.get("/api/conversations/{conversation_id}")
+    def api_conversation(conversation_id: int, limit: int = 5000, offset: int = 0) -> dict[str, Any]:
         cur = con.cursor()
-        cur.execute("""
-            SELECT id FROM conversations
-            WHERE source='chatgpt_export'
-        """)
-        for (cid,) in cur.fetchall():
-            attach_conversation_to_project(con, pid, int(cid))
+        cur.execute("SELECT id, COALESCE(title, ''), COALESCE(provider, 'chatgpt') FROM conversations WHERE id=?", (conversation_id,))
+        conv = cur.fetchone()
+        if not conv:
+            raise HTTPException(status_code=404, detail="conversation not found")
 
-        print("Import complete:", stats)
-        print(f"All imported chats attached to project '{args.project}' (you can move them later).")
-        return
-    
-    if args.cmd == "import-html":
-        stats = import_chat_html(con, args.chat_html)
-        pid = get_or_create_project(con, args.project)
+        rows = get_messages(con, conversation_id=conversation_id, limit=max(1, limit), offset=max(0, offset))
+        messages = []
+        for mid, role, created_at, content, _meta_json in rows:
+            messages.append(
+                {
+                    "id": int(mid),
+                    "role": role,
+                    "created_at": created_at,
+                    "content": content,
+                    "preview": _snippet(content),
+                }
+            )
+        return {
+            "id": int(conv[0]),
+            "title": conv[1],
+            "provider": conv[2],
+            "messages": messages,
+        }
 
-        # Attach all HTML-imported conversations to chosen project
+    @app.get("/api/messages/{message_id}/context")
+    def api_context(message_id: int, window: int = 6) -> dict[str, Any]:
         cur = con.cursor()
-        cur.execute("""
-            SELECT id FROM conversations
-            WHERE source='chatgpt_html'
-        """)
-        for (cid,) in cur.fetchall():
-            attach_conversation_to_project(con, pid, int(cid))
+        cur.execute("SELECT conversation_id FROM messages WHERE id=?", (int(message_id),))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="message not found")
 
-        print("HTML import complete:", stats)
-        print(f"Attached to project '{args.project}'.")
-        return
+        conversation_id = int(row[0])
+        cur.execute(
+            """
+            SELECT id, role, content, created_at
+            FROM messages
+            WHERE conversation_id=?
+            ORDER BY id ASC
+            """,
+            (conversation_id,),
+        )
+        rows = cur.fetchall()
+        idx = next((i for i, r in enumerate(rows) if int(r[0]) == int(message_id)), None)
+        if idx is None:
+            raise HTTPException(status_code=404, detail="message not found in conversation")
+
+        start = max(0, idx - max(0, int(window)))
+        end = min(len(rows), idx + max(0, int(window)) + 1)
+        items = []
+        for i in range(start, end):
+            mid, role, content, created_at = rows[i]
+            items.append(
+                {
+                    "id": int(mid),
+                    "role": role,
+                    "created_at": created_at,
+                    "content": content,
+                    "is_target": int(mid) == int(message_id),
+                }
+            )
+        return {"conversation_id": conversation_id, "message_id": int(message_id), "items": items}
+
+    @app.get("/api/messages/{message_id}/tags")
+    def api_list_tags(message_id: int) -> dict[str, Any]:
+        cur = con.cursor()
+        cur.execute("SELECT tag FROM message_tags WHERE message_id=? ORDER BY tag COLLATE NOCASE", (int(message_id),))
+        tags = [r[0] for r in cur.fetchall()]
+        return {"message_id": int(message_id), "tags": tags}
+
+    @app.post("/api/messages/{message_id}/tags")
+    def api_add_tag(message_id: int, payload: TagPayload) -> dict[str, Any]:
+        tag = (payload.tag or "").strip()
+        if not tag:
+            raise HTTPException(status_code=400, detail="tag is required")
+
+        cur = con.cursor()
+        cur.execute("SELECT 1 FROM messages WHERE id=?", (int(message_id),))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="message not found")
+
+        add_tag(con, message_id=message_id, tag=tag)
+        cur.execute("SELECT tag FROM message_tags WHERE message_id=? ORDER BY tag COLLATE NOCASE", (int(message_id),))
+        tags = [r[0] for r in cur.fetchall()]
+        return {"ok": True, "message_id": int(message_id), "tags": tags}
+
+    return app
 
 
-    if args.cmd == "run":
-        app = make_app(db_path)
-        import uvicorn
-        uvicorn.run(app, host=args.host, port=args.port)
+app = make_app()
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+
+    uvicorn.run("src.app:app", host="127.0.0.1", port=8000, reload=False)

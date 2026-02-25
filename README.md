@@ -1,150 +1,173 @@
 ⭐ ChatVault
 
-Your local, searchable AI conversation archive + live chat assistant
+Your local, searchable AI conversation archive + live chat assistant.
 
-ChatVault is a small, private tool that lets you:
-	•	Import your entire ChatGPT history
-	•	Store it in a local SQLite database
-	•	Search it instantly with powerful full-text queries (SQLite FTS5)
-	•	View context around old messages
-	•	Chat via the OpenAI API while everything is automatically logged
-	•	Keep all your conversations local, private, and fully searchable
+## Install
 
-No cloud syncing. CLI-first. Just a fast personal knowledge vault you control.
-
-⸻
-
-🧰 Requirements
-	•	Python 3.10+
-	•	OpenAI API key (only required for live chat mode)
-	•	(Optional) Your ChatGPT export ZIP if you want to import older conversations
-
-⸻
-
-🚀 Installation
-
-Create a virtual environment:
-
+```bash
 python -m venv .venv
-
-Activate it:
-
-Windows
-
-.venv\Scripts\activate
-
-macOS/Linux
-
 source .venv/bin/activate
-
-Install dependencies:
-
 pip install -r requirements.txt
+```
+
+## Core commands
+
+```bash
+python chatvault.py --help
+python chatvault.py import --chat-html path/to/chat.html
+python chatvault.py import-claude --export path/to/claude_export.json
+python chatvault.py search "transformer AND memory"
+python chatvault.py search "how do I optimize this" --semantic --limit 5
+python chatvault.py ctx 42 --window 6
+python chatvault.py stats
+python chatvault.py titles
+python chatvault.py tag 42 --tag research
+python chatvault.py search-tags research
+python chatvault.py replay 3 --speed 1.5
+python chatvault.py council --question "How do we design a CPU?"
+python chatvault.py summarize --range last_30_days
+python chatvault.py recommend
+```
+
+## ChatGPT HTML import
+
+```bash
+python chatvault.py import --chat-html exports/chat.html
+```
+
+Notes:
+- Conversation titles are generated automatically from the first user message.
+- Message embeddings are generated during import for semantic search.
+
+## Claude import
+
+Use a Claude export JSON file and import with:
+
+```bash
+python chatvault.py import-claude --export exports/claude.json
+```
+
+Imported conversations use the same schema and store `provider='claude'` in the conversation metadata column.
 
 
-⸻
+## LLM backend switch
 
-🔧 Environment Variables
+Set backend through environment variables:
 
-Create your .env:
+```bash
+CHATVAULT_LLM_BACKEND=openai   # or anthropic / ollama
+```
 
-cp .env.example .env
+Commands that use LLMs (`chat`, `council`, `summarize`, `recommend`) route through a shared backend adapter.
 
-Then open .env and set:
+## Stats
 
-OPENAI_API_KEY=your_key_here
+```bash
+python chatvault.py stats
+```
 
-Optional settings are included in .env.example.
+Shows total messages, total conversations, date range, and messages/conversation mean/min/max.
 
-⸻
+## Tagging
 
-📥 Importing your ChatGPT data
-	1.	In ChatGPT: Settings → Data Controls → Export Data
-	2.	OpenAI emails you a ZIP
-	3.	Extract it and locate chat.html
+Add tags to messages and query by tag:
 
-Then import it into ChatVault:
+```bash
+python chatvault.py tag 101 --tag bug
+python chatvault.py search-tags bug
+```
 
-python chatvault.py import --chat-html "path/to/chat.html"
+## Titles
 
-Messages, timestamps, and metadata will be indexed locally.
+List all conversation IDs and titles:
 
-⸻
+```bash
+python chatvault.py titles
+```
 
-🔎 Searching your archive
+## Replay
 
-Full-text search using SQLite FTS5:
+Replay a conversation in timeline order with delays based on original message timestamp gaps:
 
-python chatvault.py search 'deterministic AND (cpu OR processor)'
+```bash
+python chatvault.py replay 12 --speed 1.5
+```
 
-Exact phrase search:
+Higher `--speed` means faster playback.
 
-python chatvault.py search '"mass gap"'
+## Council mode
+
+Council mode asks the same question to multiple backends, stores all responses, then synthesizes a final answer using OpenAI:
+- OpenAI (`OPENAI_API_KEY`)
+- Claude (`ANTHROPIC_API_KEY`)
+- local Ollama (`http://localhost:11434`)
+
+```bash
+python chatvault.py council --question "How do we design a CPU?"
+```
+
+All intermediate responses and the synthesis are saved to SQLite in a dedicated `council` conversation.
+
+## Summarize
+
+Generate rolling summaries over message ranges:
+
+```bash
+python chatvault.py summarize --range last_30_days
+```
+
+Output includes:
+- high-level summary
+- common themes
+- recurring tasks
+- action items
+
+Use `--no-llm` for heuristic-only mode.
+
+## Recommend
+
+Scan the full archive and suggest:
+- unfinished threads
+- ideas mentioned multiple times
+- action items/plans
+- related conversations
+
+```bash
+python chatvault.py recommend
+```
+
+Use `--no-llm` for heuristic-only recommendations.
+
+## Semantic search
+
+Semantic mode uses `sentence-transformers` embeddings locally and saves vectors in SQLite.
+The first run may download the model once; after that it works offline.
+
+```bash
+python chatvault.py search "which conversation discussed sqlite fts ranking" --semantic --limit 5
+```
 
 
-⸻
+## Offline mode
 
-🧱 Viewing message context
+To run LLM features fully offline, use local Ollama and enable offline mode:
 
-Each message has an ID.
-To view it with surrounding messages:
+```bash
+CHATVAULT_LLM_BACKEND=ollama
+CHATVAULT_OFFLINE=true
+ollama pull llama3
+ollama serve
+```
 
-python chatvault.py ctx 12345 --window 6
+With this setup, `chat`, `council`, `summarize`, and `recommend` can run without remote LLM API calls.
 
-This shows message 12345 with 6 messages before and after.
+## Database
 
-⸻
+By default data is stored in `chatvault.sqlite3`.
 
-💬 Live Chat Mode
-
-Start a conversation, with all messages automatically stored:
-
-python chatvault.py chat --title "CPU design session"
-
-Inside the chat:
-	•	/search <fts query> — search your archive
-	•	/ctx <message_id> — view context
-	•	/quit — exit
-
-Everything is saved locally as you go.
-
-⸻
-
-📁 Database
-
-ChatVault stores all data in:
-
-chatvault.sqlite3
-
-This database lives only on your machine and never leaves it.
-
-⸻
-
-🎯 Why ChatVault Exists
-
-ChatGPT gives you thousands of conversations…
-but no real way to search or organise them.
-
-ChatVault gives you:
-	•	Instant local search
-	•	A permanent archive
-	•	Tools to analyse your past discussions
-	•	A unified interface for both old and new chats
-	•	Full control and full privacy
-
-It’s your personal memory vault for AI conversations.
-
-⸻
-
-🙌 Contributing
-
-Pull requests, ideas, and feature suggestions are welcome.
-Feel free to open an issue or reach out if you’d like to help shape where this goes.
-
-⸻
-
-📝 License
-
-This project is released under the MIT License.
-See the MIT License file for details.
-
+Schema includes:
+- `conversations` (with `provider` + `title`)
+- `messages`
+- `message_tags`
+- `message_embeddings`
+- `messages_fts`

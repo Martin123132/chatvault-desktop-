@@ -49,6 +49,10 @@ from doc_tools import inspect_pdf, inspect_docx, inspect_pptx
 from table_tools import inspect_csv, transform_csv, generate_chart
 from code_tools import inspect_code
 from ai_files import save_ai_file
+try:
+    from .llm_backends import generate_response
+except Exception:  # pragma: no cover
+    from llm_backends import generate_response
 
 load_dotenv()
 
@@ -1667,9 +1671,8 @@ def continue_conversation(
     project_id: int | None = None,
     model: str | None = None,
 ) -> str:
-    client = _get_openai_client()
-
     api_messages = _prepare_chat_messages(con, conversation_id, project_id, user_text)
+
     chosen_model = model
     if not chosen_model and project_id:
         chosen_model = get_project_model(con, project_id)
@@ -1677,79 +1680,35 @@ def continue_conversation(
 
     provider, base_model = _parse_provider_model(chosen_model)
 
-    tools = [SEARCH_TOOL_DEF]
-    tools.extend([
-        EXCEL_INSPECT_TOOL_DEF,
-        EXCEL_MODIFY_TOOL_DEF,
-        PDF_INSPECT_TOOL_DEF,
-        DOCX_INSPECT_TOOL_DEF,
-        PPTX_INSPECT_TOOL_DEF,
-        PROJECT_NOTES_LIST_TOOL_DEF,
-        PROJECT_NOTES_SAVE_TOOL_DEF,
-        PROJECT_NOTES_DELETE_TOOL_DEF,
-        CSV_INSPECT_TOOL_DEF,
-        CSV_TRANSFORM_TOOL_DEF,
-        CHART_GENERATE_TOOL_DEF,
-        CODE_INSPECT_TOOL_DEF,
-        WORKFLOW_CREATE_TOOL_DEF,
-        WORKFLOW_LIST_TOOL_DEF,
-        WORKFLOW_DELETE_TOOL_DEF,
-        WORKFLOW_RUN_TOOL_DEF,
-        AI_WRITE_FILE_TOOL_DEF,
-        TEXT_MODIFY_TOOL_DEF,
-        CSV_MODIFY_TOOL_DEF,
-        DOCX_MODIFY_TOOL_DEF,
-        PPTX_MODIFY_TOOL_DEF,
-        PDF_MODIFY_TOOL_DEF,
-        ZIP_INSPECT_TOOL_DEF,
-        ZIP_EXTRACT_TOOL_DEF,
-        ZIP_CREATE_TOOL_DEF,
-        RUN_PYTHON_TOOL_DEF,
-    ])
-    tools.extend([WEB_SEARCH_TOOL_DEF, FETCH_URL_TOOL_DEF])
+    system_prompt = None
+    non_system_messages = []
+    for m in api_messages:
+        if m.get("role") == "system" and system_prompt is None:
+            content = m.get("content")
+            system_prompt = content if isinstance(content, str) else str(content)
+            continue
+        non_system_messages.append(m)
 
-    if provider != "openai":
-        # Run a tool-enabled OpenAI pass to gather context, then hand results to the target provider
-        tool_messages = copy.deepcopy(api_messages)
-        tool_payload = {
-            "model": _parse_provider_model(DEFAULT_MODEL)[1],
-            "messages": tool_messages,
-            "tools": tools,
-            "tool_choice": "auto",
-        }
-        try:
-            _execute_chat_loop(client, tool_payload, con, project_id)
-        except Exception:  # pragma: no cover - defensive
-            # If tool pass fails, continue with original context
-            tool_messages = api_messages
-        prompt_text = _render_messages_to_prompt(tool_messages)
-        assistant_text = _chat_with_provider(provider, base_model, prompt_text, temperature=0.7)
-        add_message(
-            con=con,
-            conversation_id=conversation_id,
-            source="api_chat",
-            role="assistant",
-            content=assistant_text,
-            meta={
-                "provider": provider,
-                "model": base_model,
-                "tool_runner": "openai",
-                "tool_runner_model": _parse_provider_model(DEFAULT_MODEL)[1],
-                "replayable": False,
-            },
-        )
-        return assistant_text
+    assistant_text = generate_response(
+        messages=non_system_messages,
+        system_prompt=system_prompt,
+        backend=provider,
+        temperature=0.7,
+        max_tokens=1200,
+        model=base_model,
+    )
 
-    request_payload = {
-        "model": base_model,
-        "messages": api_messages,
-        "tools": tools,
-        "tool_choice": "auto"
-    }
-
-    final_resp, assistant_text = _execute_chat_loop(client, request_payload, con, project_id)
-
-    _store_assistant_response(con, conversation_id, assistant_text, request_payload, final_resp)
-
+    add_message(
+        con=con,
+        conversation_id=conversation_id,
+        source="api_chat",
+        role="assistant",
+        content=assistant_text,
+        meta={
+            "provider": provider,
+            "model": base_model,
+            "replayable": False,
+        },
+    )
     return assistant_text
 
