@@ -14,9 +14,19 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from dotenv import load_dotenv
-from src.chat_api import continue_conversation
-from src.chatvault_db import add_message, connect, create_conversation, search_messages
+from src.chatvault_db import (
+    add_message,
+    add_tag,
+    connect,
+    create_conversation,
+    list_titles,
+    search_by_tag,
+    search_messages,
+    semantic_search_messages,
+)
 from src.importer_chatgpt_html import import_chat_html
+from src.importer_claude import import_claude_export
+from src.stats import collect_stats
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
@@ -26,8 +36,29 @@ def _cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_claude(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    stats = import_claude_export(con, args.export)
+    print("Claude import complete:", stats)
+    return 0
+
+
 def _cmd_search(args: argparse.Namespace) -> int:
     con = connect(args.db)
+    if args.semantic:
+        try:
+            rows = semantic_search_messages(con, args.query, limit=args.limit)
+        except Exception as exc:
+            print(f"Semantic search unavailable: {exc}")
+            return 1
+        if not rows:
+            print("No semantic matches found.")
+            return 0
+        for score, message_id, conversation_id, title, role, snippet in rows:
+            print(f"[{message_id}] sim={score:.4f} conv={conversation_id} role={role} title={title!r}")
+            print(f"  {snippet}")
+        return 0
+
     rows = search_messages(con, args.query, limit=args.limit)
     if not rows:
         print("No matches found.")
@@ -76,7 +107,14 @@ def _cmd_ctx(args: argparse.Namespace) -> int:
 
 def _cmd_chat(args: argparse.Namespace) -> int:
     con = connect(args.db)
-    conversation_id = create_conversation(con, source="api_chat", title=args.title, external_id=None, created_at=None)
+    conversation_id = create_conversation(
+        con,
+        source="api_chat",
+        title=args.title,
+        external_id=None,
+        created_at=None,
+        provider="chatgpt",
+    )
     print(f"Started conversation {conversation_id}. Type /quit to exit.")
 
     while True:
@@ -98,14 +136,57 @@ def _cmd_chat(args: argparse.Namespace) -> int:
             source="api_chat",
             role="user",
             content=user_text,
+            create_embedding=True,
         )
 
         try:
+            from src.chat_api import continue_conversation
             reply = continue_conversation(con, conversation_id=conversation_id, user_text=user_text)
         except Exception as exc:  # pragma: no cover - CLI guardrail
             print(f"assistant> [error] {exc}")
             continue
         print(f"assistant> {reply}")
+
+
+def _cmd_stats(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    stats = collect_stats(con)
+    print(f"total messages: {stats['total_messages']}")
+    print(f"total conversations: {stats['total_conversations']}")
+    print(f"date range: {stats['date_range'][0]} -> {stats['date_range'][1]}")
+    mpc = stats["messages_per_conversation"]
+    print(f"messages/conversation mean={mpc['mean']:.2f} min={mpc['min']} max={mpc['max']}")
+    return 0
+
+
+def _cmd_tag(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    add_tag(con, args.message_id, args.tag)
+    print(f"Tagged message {args.message_id} with '{args.tag}'.")
+    return 0
+
+
+def _cmd_search_tags(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    rows = search_by_tag(con, args.tag, limit=args.limit)
+    if not rows:
+        print("No tagged messages found.")
+        return 0
+    for message_id, conversation_id, title, role, snippet in rows:
+        print(f"[{message_id}] conv={conversation_id} role={role} title={title!r}")
+        print(f"  {snippet}")
+    return 0
+
+
+def _cmd_titles(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    rows = list_titles(con)
+    if not rows:
+        print("No conversations found.")
+        return 0
+    for conversation_id, title in rows:
+        print(f"{conversation_id}\t{title}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -117,9 +198,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("--chat-html", required=True, help="Path to chat.html")
     p_import.set_defaults(func=_cmd_import)
 
+    p_import_claude = sub.add_parser("import-claude", help="Import Claude export JSON")
+    p_import_claude.add_argument("--export", required=True, help="Path to Claude export JSON")
+    p_import_claude.set_defaults(func=_cmd_import_claude)
+
     p_search = sub.add_parser("search", help="Search archived messages")
     p_search.add_argument("query", help="FTS query")
     p_search.add_argument("--limit", type=int, default=20, help="Max hits")
+    p_search.add_argument("--semantic", action="store_true", help="Use semantic (embedding) search")
     p_search.set_defaults(func=_cmd_search)
 
     p_ctx = sub.add_parser("ctx", help="Show surrounding context for a message id")
@@ -130,6 +216,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_chat = sub.add_parser("chat", help="Start live chat session")
     p_chat.add_argument("--title", default="Live chat", help="Conversation title")
     p_chat.set_defaults(func=_cmd_chat)
+
+    p_stats = sub.add_parser("stats", help="Show archive statistics")
+    p_stats.set_defaults(func=_cmd_stats)
+
+    p_tag = sub.add_parser("tag", help="Tag a message")
+    p_tag.add_argument("message_id", type=int)
+    p_tag.add_argument("--tag", required=True, help="Tag name")
+    p_tag.set_defaults(func=_cmd_tag)
+
+    p_search_tags = sub.add_parser("search-tags", help="Find messages by tag")
+    p_search_tags.add_argument("tag", help="Tag to search")
+    p_search_tags.add_argument("--limit", type=int, default=20, help="Max hits")
+    p_search_tags.set_defaults(func=_cmd_search_tags)
+
+    p_titles = sub.add_parser("titles", help="List conversation titles")
+    p_titles.set_defaults(func=_cmd_titles)
 
     return parser
 
