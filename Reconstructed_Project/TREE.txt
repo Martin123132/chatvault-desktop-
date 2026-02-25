@@ -16,6 +16,9 @@
 ./src/importer_chatgpt.py
 ./src/importer_chatgpt_html.py
 ./src/replay.py
+./src/table_tools.py
+./src/tools_search.py
+./src/webui.py
 ./static
 ./static/katex
 ./static/katex/auto-render.min.js
