@@ -8,6 +8,7 @@ from typing import Iterable, List, Sequence, Tuple
 
 DEFAULT_EMBED_MODEL = os.getenv("CHATVAULT_EMBEDDINGS_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 DEFAULT_EMBED_BACKEND = os.getenv("CHATVAULT_EMBEDDINGS_BACKEND", "sentence-transformers")
+DEFAULT_EMBED_MODEL = "all-MiniLM-L6-v2"
 
 
 @lru_cache(maxsize=1)
@@ -34,6 +35,7 @@ def _load_model(model_name: str = DEFAULT_EMBED_MODEL):
             "you may need to be online once to download the model. After download, embeddings "
             f"work offline. Original error: {exc}"
         ) from exc
+    return SentenceTransformer(model_name)
 
 
 def embed_text(text: str, model_name: str = DEFAULT_EMBED_MODEL) -> List[float]:

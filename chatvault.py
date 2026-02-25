@@ -29,6 +29,8 @@ from src.importer_chatgpt_html import import_chat_html
 from src.importer_claude import import_claude_export
 from src.insights import recommend_from_archive, summarize_range
 from src.replay import replay_conversation
+from src.importer_chatgpt_html import import_chat_html
+from src.importer_claude import import_claude_export
 from src.stats import collect_stats
 
 

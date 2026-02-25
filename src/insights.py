@@ -7,6 +7,10 @@ from typing import Dict, List, Tuple
 
 from chatvault_db import get_all_messages, get_messages_in_range, list_conversations
 from llm_backends import generate_response
+from openai import OpenAI
+import os
+
+from chatvault_db import get_all_messages, get_messages_in_range, list_conversations
 
 
 _ACTION_RE = re.compile(r"\b(todo|fix|ship|implement|follow up|next step|action item|plan)\b", re.I)
@@ -66,6 +70,23 @@ def summarize_range(con, range_name: str, use_llm: bool = True) -> Dict[str, obj
                 summary = llm_summary
         except Exception as exc:
             raise RuntimeError(f"LLM summarization unavailable: {exc}") from exc
+    if use_llm and os.getenv("OPENAI_API_KEY") and texts:
+        try:
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            prompt = (
+                "Summarize the following messages into: high-level summary, common themes, recurring tasks, and action items.\n\n"
+                + "\n".join(texts[:200])
+            )
+            resp = client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            llm_summary = (resp.choices[0].message.content or "").strip()
+            if llm_summary:
+                summary = llm_summary
+        except Exception:
+            pass
 
     return {
         "range": (start_iso, end_iso),
@@ -132,6 +153,21 @@ def recommend_from_archive(con, use_llm: bool = True) -> Dict[str, object]:
             )
         except Exception as exc:
             raise RuntimeError(f"LLM recommendation unavailable: {exc}") from exc
+    if use_llm and os.getenv("OPENAI_API_KEY"):
+        try:
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            prompt = (
+                "Given these recommendation candidates, provide concise prioritized recommendations.\n"
+                f"unfinished={unfinished[:10]}\nideas={repeated_ideas[:10]}\nactions={action_candidates[:10]}\nrelated={related_pairs[:10]}"
+            )
+            resp = client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            llm_note = (resp.choices[0].message.content or "").strip()
+        except Exception:
+            llm_note = ""
 
     return {
         "unfinished_threads": unfinished[:20],
