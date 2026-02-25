@@ -4,6 +4,10 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 
+try:
+    from .semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
+except Exception:  # pragma: no cover
+    from semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
 from semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
 
 
@@ -740,3 +744,56 @@ def delete_conversation(con: sqlite3.Connection, conversation_id: int) -> None:
     except sqlite3.OperationalError:
         con.rollback()
         raise
+
+
+
+def get_conversation_messages(con: sqlite3.Connection, conversation_id: int) -> List[Tuple[int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, role, content, created_at
+        FROM messages
+        WHERE conversation_id=?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (int(conversation_id),),
+    )
+    return cur.fetchall()
+
+
+def get_messages_in_range(con: sqlite3.Connection, start_iso: str, end_iso: str) -> List[Tuple[int, int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, conversation_id, role, content, created_at
+        FROM messages
+        WHERE created_at >= ? AND created_at <= ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (start_iso, end_iso),
+    )
+    return cur.fetchall()
+
+
+def get_all_messages(con: sqlite3.Connection) -> List[Tuple[int, int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, conversation_id, role, content, created_at
+        FROM messages
+        ORDER BY created_at ASC, id ASC
+        """
+    )
+    return cur.fetchall()
+
+
+def list_conversations(con: sqlite3.Connection) -> List[Tuple[int, str, Optional[str], Optional[str], str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, COALESCE(title,''), created_at, updated_at, COALESCE(provider, 'chatgpt')
+        FROM conversations
+        ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+        """
+    )
+    return cur.fetchall()

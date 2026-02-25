@@ -1,5 +1,21 @@
 from __future__ import annotations
 
+from typing import Dict
+
+from chatvault_db import add_message, create_conversation
+from llm_backends import generate_response
+
+
+def _ask_backend(question: str, backend: str) -> str:
+    return generate_response(
+        messages=[{"role": "user", "content": question}],
+        backend=backend,
+        temperature=0.4,
+        max_tokens=900,
+    )
+
+
+def _synthesize(openai_answer: str, claude_answer: str, ollama_answer: str, question: str) -> str:
 import os
 from typing import Dict
 
@@ -75,6 +91,12 @@ def _synthesize(openai_answer: str, claude_answer: str, ollama_answer: str, ques
         f"Claude:\n{claude_answer}\n\n"
         f"Ollama:\n{ollama_answer}"
     )
+    return generate_response(
+        messages=[{"role": "user", "content": prompt}],
+        backend="openai",
+        temperature=0.2,
+        max_tokens=900,
+    )
     client = OpenAI(api_key=key)
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -96,6 +118,13 @@ def run_council(con, question: str) -> Dict[str, str]:
     add_message(con, conv_id, source="council", role="user", content=question, meta={"stage": "question"})
 
     answers: Dict[str, str] = {}
+    for name in ("openai", "anthropic", "ollama"):
+        try:
+            text = _ask_backend(question, backend=name)
+            answers[name if name != "anthropic" else "claude"] = text
+        except Exception as exc:
+            answers[name if name != "anthropic" else "claude"] = f"[{name} unavailable] {exc}"
+        key = name if name != "anthropic" else "claude"
     for name, fn in (("openai", _ask_openai), ("claude", _ask_claude), ("ollama", _ask_ollama)):
         try:
             text = fn(question)
@@ -107,6 +136,20 @@ def run_council(con, question: str) -> Dict[str, str]:
             conv_id,
             source="council",
             role="assistant",
+            content=answers[key],
+            meta={"stage": "backend_answer", "backend": key},
+        )
+
+    try:
+        final = _synthesize(
+            answers.get("openai", ""),
+            answers.get("claude", ""),
+            answers.get("ollama", ""),
+            question,
+        )
+    except Exception as exc:
+        final = f"[synthesis unavailable] {exc}"
+
             content=answers[name],
             meta={"stage": "backend_answer", "backend": name},
         )

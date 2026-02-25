@@ -1,21 +1,39 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from math import sqrt
 from typing import Iterable, List, Sequence, Tuple
 
+DEFAULT_EMBED_MODEL = os.getenv("CHATVAULT_EMBEDDINGS_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+DEFAULT_EMBED_BACKEND = os.getenv("CHATVAULT_EMBEDDINGS_BACKEND", "sentence-transformers")
 DEFAULT_EMBED_MODEL = "all-MiniLM-L6-v2"
 
 
 @lru_cache(maxsize=1)
 def _load_model(model_name: str = DEFAULT_EMBED_MODEL):
+    backend = (DEFAULT_EMBED_BACKEND or "sentence-transformers").strip().lower()
+    if backend != "sentence-transformers":
+        raise RuntimeError(
+            f"Unsupported embeddings backend '{backend}'. "
+            "Currently only 'sentence-transformers' is supported."
+        )
     try:
         from sentence_transformers import SentenceTransformer
     except Exception as exc:  # pragma: no cover - dependency guard
         raise RuntimeError(
             "sentence-transformers is required for semantic embeddings. "
             "Install requirements and retry."
+        ) from exc
+
+    try:
+        return SentenceTransformer(model_name)
+    except Exception as exc:  # pragma: no cover - model initialization guard
+        raise RuntimeError(
+            f"Failed to load local embeddings model '{model_name}'. If this is your first run, "
+            "you may need to be online once to download the model. After download, embeddings "
+            f"work offline. Original error: {exc}"
         ) from exc
     return SentenceTransformer(model_name)
 

@@ -5,6 +5,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
+from chatvault_db import get_all_messages, get_messages_in_range, list_conversations
+from llm_backends import generate_response
 from openai import OpenAI
 import os
 
@@ -53,6 +55,21 @@ def summarize_range(con, range_name: str, use_llm: bool = True) -> Dict[str, obj
         f"from {start_iso} to {end_iso}."
     )
 
+    if use_llm and texts:
+        prompt = (
+            "Summarize the following messages into: high-level summary, common themes, recurring tasks, and action items.\n\n"
+            + "\n".join(texts[:200])
+        )
+        try:
+            llm_summary = generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=1000,
+            )
+            if llm_summary:
+                summary = llm_summary
+        except Exception as exc:
+            raise RuntimeError(f"LLM summarization unavailable: {exc}") from exc
     if use_llm and os.getenv("OPENAI_API_KEY") and texts:
         try:
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -123,6 +140,19 @@ def recommend_from_archive(con, use_llm: bool = True) -> Dict[str, object]:
                 related_pairs.append({"conversation_a": related[i][0], "conversation_b": related[j][0], "shared": sorted(overlap)})
 
     llm_note = ""
+    if use_llm:
+        prompt = (
+            "Given these recommendation candidates, provide concise prioritized recommendations.\n"
+            f"unfinished={unfinished[:10]}\nideas={repeated_ideas[:10]}\nactions={action_candidates[:10]}\nrelated={related_pairs[:10]}"
+        )
+        try:
+            llm_note = generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=900,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"LLM recommendation unavailable: {exc}") from exc
     if use_llm and os.getenv("OPENAI_API_KEY"):
         try:
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

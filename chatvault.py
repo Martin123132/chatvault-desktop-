@@ -24,6 +24,11 @@ from src.chatvault_db import (
     search_messages,
     semantic_search_messages,
 )
+from src.council import run_council
+from src.importer_chatgpt_html import import_chat_html
+from src.importer_claude import import_claude_export
+from src.insights import recommend_from_archive, summarize_range
+from src.replay import replay_conversation
 from src.importer_chatgpt_html import import_chat_html
 from src.importer_claude import import_claude_export
 from src.stats import collect_stats
@@ -141,6 +146,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
 
         try:
             from src.chat_api import continue_conversation
+
             reply = continue_conversation(con, conversation_id=conversation_id, user_text=user_text)
         except Exception as exc:  # pragma: no cover - CLI guardrail
             print(f"assistant> [error] {exc}")
@@ -189,6 +195,78 @@ def _cmd_titles(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_replay(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    count = replay_conversation(con, args.conversation_id, speed=args.speed)
+    if count == 0:
+        print(f"Conversation {args.conversation_id} has no messages.")
+        return 1
+    return 0
+
+
+def _cmd_council(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    try:
+        result = run_council(con, args.question)
+    except Exception as exc:
+        print(f"Council failed: {exc}")
+        return 1
+    print(f"Council conversation id: {result['conversation_id']}")
+    for name in ("openai", "claude", "ollama"):
+        print(f"\n[{name}]\n{result.get(name, '')}\n")
+    print("[synthesis]")
+    print(result.get("synthesis", ""))
+    return 0
+
+
+def _cmd_summarize(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    try:
+        report = summarize_range(con, args.range, use_llm=not args.no_llm)
+    except Exception as exc:
+        print(f"Summarize failed: {exc}")
+        return 1
+    print(f"range: {report['range'][0]} -> {report['range'][1]}")
+    print(f"messages: {report['message_count']}")
+    print("\nhigh-level summary:")
+    print(report["summary"])
+    print("\ncommon themes:")
+    for theme, count in report["common_themes"]:
+        print(f"- {theme}: {count}")
+    print("\nrecurring tasks:")
+    for item in report["recurring_tasks"]:
+        print(f"- {item}")
+    print("\naction items:")
+    for item in report["action_items"]:
+        print(f"- {item}")
+    return 0
+
+
+def _cmd_recommend(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    try:
+        rec = recommend_from_archive(con, use_llm=not args.no_llm)
+    except Exception as exc:
+        print(f"Recommend failed: {exc}")
+        return 1
+    print("unfinished threads:")
+    for row in rec["unfinished_threads"]:
+        print(f"- conv {row['conversation_id']} ({row['title']}): {row['last_message']}")
+    print("\nideas mentioned multiple times:")
+    for row in rec["ideas_mentioned_multiple_times"]:
+        print(f"- {row['idea']} ({row['count']})")
+    print("\naction items or plans:")
+    for row in rec["action_items_or_plans"]:
+        print(f"- conv {row['conversation_id']} [{row['role']}] {row['text']}")
+    print("\nrelated conversations:")
+    for row in rec["related_conversations"]:
+        print(f"- {row['conversation_a']} <-> {row['conversation_b']} via {', '.join(row['shared'])}")
+    if rec.get("llm_recommendation"):
+        print("\nllm recommendation:")
+        print(rec["llm_recommendation"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("chatvault")
     parser.add_argument("--db", default=os.getenv("CHATVAULT_DB", "chatvault.sqlite3"), help="SQLite database path")
@@ -232,6 +310,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_titles = sub.add_parser("titles", help="List conversation titles")
     p_titles.set_defaults(func=_cmd_titles)
+
+    p_replay = sub.add_parser("replay", help="Replay a conversation in timestamp order")
+    p_replay.add_argument("conversation_id", type=int)
+    p_replay.add_argument("--speed", type=float, default=1.0, help="Playback speed factor (higher=faster)")
+    p_replay.set_defaults(func=_cmd_replay)
+
+    p_council = sub.add_parser("council", help="Ask multiple model backends and synthesize answer")
+    p_council.add_argument("--question", required=True, help="Question to ask all backends")
+    p_council.set_defaults(func=_cmd_council)
+
+    p_summarize = sub.add_parser("summarize", help="Summarize messages in a time range")
+    p_summarize.add_argument("--range", default="last_30_days", choices=["last_7_days", "last_30_days", "last_90_days"], help="Time range")
+    p_summarize.add_argument("--no-llm", action="store_true", help="Disable LLM enrichment")
+    p_summarize.set_defaults(func=_cmd_summarize)
+
+    p_recommend = sub.add_parser("recommend", help="Recommend follow-ups and related threads")
+    p_recommend.add_argument("--no-llm", action="store_true", help="Disable LLM enrichment")
+    p_recommend.set_defaults(func=_cmd_recommend)
 
     return parser
 
