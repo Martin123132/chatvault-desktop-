@@ -23,10 +23,6 @@ python chatvault.py stats
 python chatvault.py titles
 python chatvault.py tag 42 --tag research
 python chatvault.py search-tags research
-python chatvault.py replay 3 --speed 1.5
-python chatvault.py council --question "How do we design a CPU?"
-python chatvault.py summarize --range last_30_days
-python chatvault.py recommend
 ```
 
 ## ChatGPT HTML import
@@ -55,7 +51,14 @@ Imported conversations use the same schema and store `provider='claude'` in the 
 python chatvault.py stats
 ```
 
-Shows total messages, total conversations, date range, and messages/conversation mean/min/max.
+Example output:
+
+```text
+total messages: 240
+total conversations: 16
+date range: 2024-01-09T12:03:11+00:00 -> 2025-02-15T17:49:22+00:00
+messages/conversation mean=15.00 min=2 max=48
+```
 
 ## Tagging
 
@@ -73,59 +76,6 @@ List all conversation IDs and titles:
 ```bash
 python chatvault.py titles
 ```
-
-## Replay
-
-Replay a conversation in timeline order with delays based on original message timestamp gaps:
-
-```bash
-python chatvault.py replay 12 --speed 1.5
-```
-
-Higher `--speed` means faster playback.
-
-## Council mode
-
-Council mode asks the same question to multiple backends, stores all responses, then synthesizes a final answer using OpenAI:
-- OpenAI (`OPENAI_API_KEY`)
-- Claude (`ANTHROPIC_API_KEY`)
-- local Ollama (`http://localhost:11434`)
-
-```bash
-python chatvault.py council --question "How do we design a CPU?"
-```
-
-All intermediate responses and the synthesis are saved to SQLite in a dedicated `council` conversation.
-
-## Summarize
-
-Generate rolling summaries over message ranges:
-
-```bash
-python chatvault.py summarize --range last_30_days
-```
-
-Output includes:
-- high-level summary
-- common themes
-- recurring tasks
-- action items
-
-Use `--no-llm` for heuristic-only mode.
-
-## Recommend
-
-Scan the full archive and suggest:
-- unfinished threads
-- ideas mentioned multiple times
-- action items/plans
-- related conversations
-
-```bash
-python chatvault.py recommend
-```
-
-Use `--no-llm` for heuristic-only recommendations.
 
 ## Semantic search
 
