@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ChatVault</title>
+  <style>
+    :root { --sidebar-width: 320px; }
+    body { margin:0; font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial; }
+    .wrap { display:flex; height:100vh; position:relative; }
+    .left { width:var(--sidebar-width); border-right:1px solid #ddd; overflow:auto; padding:16px; background:#fff; }
+    .mid  { flex:1; display:flex; flex-direction:column; overflow:hidden; padding:16px; gap:16px; max-width:1400px; margin:0 auto; width:100%; }
+    .section { display:flex; flex-direction:column; gap:10px; min-height:0; }
+    .conversation { flex:1; min-height:0; }
+    .conversation .messages { flex:1; min-height:0; }
+    .conversation .messages-inner { min-height:0; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .messages { flex:1; overflow-y:auto; border:1px solid #ddd; border-radius:12px; padding:12px; background:#fdfdfd; scrollbar-gutter:stable both-edges; }
+    .bubble { padding:10px 12px; border-radius:12px; margin:8px 0; max-width:820px; background:#f8f9fb; border:1px solid #ececec; }
+    .bubble.user { background:#eef2ff; border-color:#d4dcff; }
+    .bubble.assistant { background:#f8f9fb; border-color:#e7e7e7; }
+    .bubble.system { background:#fffbe6; border-color:#f3dd84; }
+    .row { padding:8px; border:1px solid #eee; margin-bottom:6px; border-radius:8px; cursor:pointer; background:white; position:relative; }
+    .row:hover { background:#fafafa; }
+    .row button { margin-top:8px; }
+    .small { color:#666; font-size:12px; }
+    textarea { width:100%; padding:10px; border-radius:10px; border:1px solid #ccc; resize:vertical; }
+    textarea:disabled { background:#f0f0f0; }
+    input { width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #ccc; }
+    button { padding:8px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer; }
+    button:hover { background:#f0f0f0; }
+    pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin:8px 0 0; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; color:#444; }
+    button.row { background: transparent; border: 1px solid #eee; font: inherit; text-align: left; width: 100%; }
+    details { border:1px solid #eee; border-radius:10px; padding:6px 10px; background:white; }
+    details summary { cursor:pointer; font-weight:600; }
+    .reply-area { display:flex; flex-direction:column; gap:8px; }
+    .reply-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    #councilLog { max-height:160px; overflow-y:auto; white-space:pre-wrap; }
+    .empty-state { color:#888; font-size:13px; text-align:center; margin-top:12px; }
+    .messages-inner { min-height:100%; display:flex; flex-direction:column; }
+    #chats { max-height:320px; overflow-y:auto; padding-right:4px; }
+    .dot-menu { position:absolute; top:8px; right:8px; }
+    .dot-menu summary { list-style:none; cursor:pointer; font-size:18px; line-height:1; padding:4px; border-radius:6px; }
+    .dot-menu summary::-webkit-details-marker { display:none; }
+    .dot-menu[open] summary { background:#f2f2f2; }
+    .dot-menu-items { position:absolute; top:30px; right:0; background:white; border:1px solid #ddd; border-radius:8px; padding:8px; box-shadow:0 6px 20px rgba(0,0,0,0.12); display:flex; flex-direction:column; gap:6px; min-width:150px; z-index:3; }
+    .mobile-only { display:none; }
+    #sidebarOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.25); z-index:9; }
+    .scroll-box { max-height:240px; overflow-y:auto; padding-right:4px; }
+
+    @media (max-width: 900px) {
+      .wrap { flex-direction:column; height:auto; min-height:100vh; }
+      .left { position:fixed; top:0; left:0; height:100vh; max-height:100vh; z-index:10; transform:translateX(-100%); transition:transform 0.25s ease; box-shadow:4px 0 18px rgba(0,0,0,0.15); }
+      body.show-left .left { transform:translateX(0); }
+      body.show-left { overflow:hidden; }
+      body.show-left #sidebarOverlay { display:block; }
+      .mid { width:100%; max-width:100%; padding:14px; }
+      .mobile-only { display:inline-flex; align-items:center; gap:6px; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/katex/katex.min.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';">
+  <script defer src="/static/katex/katex.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';"></script>
+  <script defer src="/static/katex/auto-render.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js';"></script>
+</head>
+<body>
+<button id="sidebarOverlay" type="button" aria-label="Close sidebar overlay" onclick="closeSidebar()" onkeydown="if(event.key==='Escape'){closeSidebar();}"></button>
+<div class="wrap">
+  <div class="left">
+    <h3>Projects</h3>
+    <input id="newProjectName" placeholder="New project name"/>
+    <button onclick="createProject()">Create</button>
+    <div style="margin-top:10px;">
+      <button class="row" onclick="selectProject(0)"><b>All</b> <span class="small">(search across everything)</span></button>
+    </div>
+    <div id="projects"></div>
+    <hr/>
+    <h4>System Prompt</h4>
+    <textarea id="systemPromptBox" placeholder="Instructions for this project…"></textarea>
+    <button onclick="saveSystemPrompt()">Save</button>
+    <hr/>
+    <h4>Model</h4>
+    <select id="projectModelSelect" onchange="saveProjectModel()"></select>
+    <hr/>
+    <h4>Unassigned chats</h4>
+    <div id="unassigned"></div>
+
+    <hr/>
+    <h4>Import ChatGPT export</h4>
+    <input type="file" id="importFile" accept=".json,.html"/>
+    <input id="importProjectName" placeholder="Project name" value="Imported"/>
+    <button onclick="importChats()">Import</button>
+
+    <hr/>
+    <h4>Imported files</h4>
+    <button onclick="loadImports()">Refresh imports</button>
+    <div id="imports" class="scroll-box" style="margin-top:8px;"></div>
+
+    <hr/>
+    <h4>AI generated files</h4>
+    <div class="small">Filtered by the selected project when one is active.</div>
+    <button onclick="loadGeneratedFiles()">Refresh generated</button>
+    <div id="generated" class="scroll-box" style="margin-top:8px;"></div>
+
+    <hr/>
+    <h4>Multi-select (assistant)</h4>
+    <div class="small" id="msStatus">Select a conversation first.</div>
+    <button type="button" onclick="loadMultiSelect()">Load assistant messages</button>
+    <div id="multiSelectList" style="max-height:200px; overflow-y:auto; margin-top:6px;"></div>
+    <button type="button" id="msCopyBtn" onclick="copyMultiSelect()" disabled>Copy selected</button>
+  </div>
+
+  <div class="mid">
+    <div class="section">
+      <div class="toolbar">
+        <button class="mobile-only" type="button" onclick="toggleSidebar()" aria-label="☰ Menu">☰ Menu</button>
+        <h3 id="currentProjectName" style="margin:0;">All</h3>
+        <button onclick="refreshSidebar()">Refresh</button>
+      </div>
+      <div>
+        <input id="searchBox" placeholder="Search (FTS query)" onkeydown="if(event.key==='Enter'){doSearch();}" />
+        <button onclick="doSearch()">Search</button>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+
+    <details id="chatsSection" open>
+      <summary>Chats</summary>
+      <div style="display:flex; gap:8px; align-items:center; margin:6px 0;">
+        <input id="newChatTitle" placeholder="New chat title" style="flex:1;" />
+        <button type="button" onclick="createChat()">New chat</button>
+      </div>
+      <div id="chats"></div>
+    </details>
+
+    <div class="section conversation">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div>
+          <h4 style="margin:0;">Conversation</h4>
+          <div id="chatTitle" class="small">Select a conversation.</div>
+          <div id="modelInfo" class="small" style="margin-top:4px; color:#444;">Model: (default)</div>
+        </div>
+        <button type="button" id="deleteConvBtn" onclick="deleteConversation()" disabled>Delete</button>
+      </div>
+      <div class="messages" id="messages">
+        <div class="messages-inner" id="messagesInner">
+          <div class="empty-state">No conversation selected.</div>
+        </div>
+      </div>
+      <div class="reply-area">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="file" id="genericFile" multiple style="flex:1; min-width:200px;" />
+          <button type="button" onclick="importGenericFile()">Import file(s) to conversation</button>
+          <span class="small" id="genericStatus"></span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="file" id="imageFile" accept="image/*" multiple style="flex:1; min-width:200px;" />
+          <input type="text" id="imagePrompt" placeholder="Optional vision prompt (e.g. describe handwriting)" style="flex:1; min-width:220px;" />
+          <button type="button" onclick="analyzeImage()">Analyze image (OCR/vision)</button>
+          <span class="small" id="imageStatus"></span>
+        </div>
+        <div id="imageResults" class="small" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+      <div class="reply-area">
+        <textarea id="replyBox" placeholder="Reply (stored in DB)" disabled></textarea>
+        <div class="reply-actions">
+          <span class="small" id="replyStatus"></span>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <select id="replyModelSelect" onchange="replyModelOverride=this.value; updateModelHeader();" style="min-width:180px;">
+              <option value="">(project default)</option>
+            </select>
+            <button id="councilToggle" type="button" onclick="toggleCouncilMode()" title="Toggle council mode">Council: Off</button>
+            <button id="replyButton" onclick="sendReply()" disabled>Send &amp; save</button>
+          </div>
+          <div id="councilLog" class="small" style="margin-top:4px; color:#444;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const state = { projectId: 0, projectName: "All", conversationId: null };
+
+const els = {
+  projectName: document.getElementById('currentProjectName'),
+  projects: document.getElementById('projects'),
+  searchBox: document.getElementById('searchBox'),
+  searchResults: document.getElementById('searchResults'),
+  chats: document.getElementById('chats'),
+  chatTitle: document.getElementById('chatTitle'),
+  messages: document.getElementById('messages'),
+  messagesInner: document.getElementById('messagesInner'),
+  replyBox: document.getElementById('replyBox'),
+  replyButton: document.getElementById('replyButton'),
+  replyStatus: document.getElementById('replyStatus'),
+  deleteConvBtn: document.getElementById('deleteConvBtn'),
+  systemPrompt: document.getElementById('systemPromptBox'),
+  projectModelSelect: document.getElementById('projectModelSelect'),
+  unassigned: document.getElementById('unassigned'),
+  importFile: document.getElementById('importFile'),
+  importProjectName: document.getElementById('importProjectName'),
+  genericFile: document.getElementById('genericFile'),
+  genericStatus: document.getElementById('genericStatus'),
+  generated: document.getElementById('generated'),
+   imageFile: document.getElementById('imageFile'),
+   imagePrompt: document.getElementById('imagePrompt'),
+   imageStatus: document.getElementById('imageStatus'),
+  imports: document.getElementById('imports'),
+  newChatTitle: document.getElementById('newChatTitle'),
+  msStatus: document.getElementById('msStatus'),
+  msList: document.getElementById('multiSelectList'),
+  msCopyBtn: document.getElementById('msCopyBtn'),
+  councilToggle: document.getElementById('councilToggle'),
+  councilLog: document.getElementById('councilLog')
+};
+
+const messagePage = { limit: 5000, offset: 0, exhausted: false };
+let modelsCache = [];
+let currentModelDisplay = '';
+let currentSystemSnippet = '';
+let replyModelOverride = '';
+let councilMode = false;
+
+els.projectName.innerText = state.projectName;
+
+
+function toggleCouncilMode(force) {
+  councilMode = typeof force === 'boolean' ? force : !councilMode;
+  const on = councilMode;
+  els.councilToggle.textContent = on ? 'Council: On' : 'Council: Off';
+  els.councilToggle.style.backgroundColor = on ? '#cfe8ff' : '';
+  els.councilLog.textContent = '';
+}
+function toggleSidebar(force) {
+  const enable = typeof force === 'boolean' ? force : !document.body.classList.contains('show-left');
+  if (enable) {
+    document.body.classList.add('show-left');
+  } else {
+    document.body.classList.remove('show-left');
+  }
+}
+
+function closeSidebarOnMobile() {
+  if (globalThis.matchMedia('(max-width: 900px)').matches) {
+    toggleSidebar(false);
+  }
+}
+
+function closeSidebar() {
+  toggleSidebar(false);
+}
+
+function downloadStoredFile(messageId, filename) {
+  const safeName = (filename || '').trim() || `file-${messageId}`;
+  const url = `/api/files/${messageId}/download?filename=${encodeURIComponent(safeName)}`;
+  window.open(url, '_blank');
+}
+
+window.addEventListener('resize', () => {
+  if (!globalThis.matchMedia('(max-width: 900px)').matches) {
+    document.body.classList.remove('show-left');
+  }
+});
+
+function resetConversationView() {
+  state.conversationId = null;
+  els.chatTitle.innerText = 'Select a conversation.';
+  els.messagesInner.innerHTML = '<div class="empty-state">No conversation selected.</div>';
+  els.messages.scrollTop = 0;
+  els.replyBox.value = '';
+  els.replyBox.disabled = true;
+  els.replyButton.disabled = true;
+  els.replyStatus.textContent = '';
+  els.deleteConvBtn.disabled = true;
+  els.genericFile.value = '';
+  els.genericStatus.textContent = '';
+  if (els.imageFile) els.imageFile.value = '';
+  if (els.imagePrompt) els.imagePrompt.value = '';
+  if (els.imageStatus) els.imageStatus.textContent = '';
+  messagePage.offset = 0;
+  messagePage.exhausted = false;
+  currentModelDisplay = '';
+  currentSystemSnippet = '';
+  replyModelOverride = '';
+  updateModelHeader();
+}
+
+async function jget(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+async function jpost(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+function escapeHtml(s) {
+  return (s || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+
+const pendingMath = [];
+let mathReady = false;
+
+function renderMathSafe(el) {
+  if (!el) return;
+  const tryRender = (target = el) => {
+    if (globalThis.renderMathInElement) {
+      mathReady = true;
+      globalThis.renderMathInElement(target, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: String.raw`\[`, right: String.raw`\]`, display: true },
+          { left: String.raw`\(`, right: String.raw`\)`, display: false },
+          { left: '$', right: '$', display: false },
+        ],
+        throwOnError: false,
+      });
+      return true;
+    }
+    return false;
+  };
+
+  if (mathReady && globalThis.renderMathInElement) {
+    tryRender(el);
+    return;
+  }
+
+  if (!tryRender(el)) {
+    pendingMath.push(el);
+    setTimeout(() => {
+      if (globalThis.renderMathInElement) {
+        mathReady = true;
+        while (pendingMath.length) {
+          const node = pendingMath.shift();
+          if (node) tryRender(node);
+        }
+      }
+    }, 120);
+  }
+}
+
+window.addEventListener('load', () => {
+  if (globalThis.renderMathInElement) {
+    mathReady = true;
+    if (els.messagesInner) renderMathSafe(els.messagesInner);
+  }
+});
+async function loadProjects() {
+  const ps = await jget('/api/projects');
+  const container = els.projects;
+  container.innerHTML = '';
+  ps.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'row';
+    btn.innerHTML = `<b>${escapeHtml(p.name)}</b> <span class="pill">id ${p.id}</span>`;
+    btn.onclick = () => selectProject(p.id, p.name);
+    container.appendChild(btn);
+  });
+}
+
+async function loadUnassigned() {
+  const rows = await jget('/api/conversations/unassigned');
+  const container = els.unassigned;
+  container.innerHTML = '';
+  rows.slice(0, 200).forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'row';
+    card.innerHTML = `<b>${escapeHtml(r.title || 'Untitled')}</b><div class="small">${escapeHtml(r.updated_at || '')}</div>`;
+    const attachBtn = document.createElement('button');
+    attachBtn.type = 'button';
+    attachBtn.textContent = 'Attach to current project';
+    attachBtn.onclick = evt => {
+      evt.stopPropagation();
+      attachToCurrent(r.id);
+    };
+    card.appendChild(attachBtn);
+    card.onclick = () => openConversation(r.id, r.title || 'Untitled');
+    container.appendChild(card);
+  });
+}
+
+async function loadImports() {
+  const data = await jget('/api/imports?limit=200');
+  const container = els.imports;
+  container.innerHTML = '';
+  if (!data.items || data.items.length === 0) {
+    container.innerHTML = '<div class="small">No imports yet.</div>';
+    return;
+  }
+  data.items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'row import-row';
+    const name = escapeHtml(item.filename || '(unknown)');
+    const conv = escapeHtml(item.conversation_title || 'Untitled');
+    const bytes = item.bytes ? ` • ${item.bytes} bytes` : '';
+    const stored = item.stored ? ' stored' : '';
+    div.innerHTML = `<b>${name}</b><div class="small">${escapeHtml(item.source || '')}${bytes}${stored}</div><div class="small">In: ${conv}</div>`;
+
+    if (item.stored) {
+      const menu = document.createElement('details');
+      menu.className = 'dot-menu';
+
+      const summary = document.createElement('summary');
+      summary.className = 'dot-trigger';
+      summary.textContent = '...';
+      summary.title = 'More actions';
+      summary.onclick = evt => evt.stopPropagation();
+      menu.appendChild(summary);
+
+      const items = document.createElement('div');
+      items.className = 'dot-menu-items';
+
+      const dlBtn = document.createElement('button');
+      dlBtn.type = 'button';
+      dlBtn.textContent = 'Download file';
+      dlBtn.onclick = evt => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        downloadStoredFile(item.message_id, item.filename || 'file');
+        menu.removeAttribute('open');
+      };
+      items.appendChild(dlBtn);
+
+      menu.appendChild(items);
+      div.appendChild(menu);
+    }
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.textContent = 'Open conversation';
+    openBtn.onclick = evt => {
+      evt.stopPropagation();
+      openConversation(item.conversation_id, item.conversation_title || 'Untitled');
+    };
+    div.appendChild(openBtn);
+
+    if ((item.filename || '').toLowerCase().endsWith('.zip') && item.stored) {
+      const zipBtn = document.createElement('button');
+      zipBtn.type = 'button';
+      zipBtn.textContent = 'List zip entries';
+      zipBtn.onclick = async evt => {
+        evt.stopPropagation();
+        await listZipEntries(item.message_id, item.filename || 'zip');
+      };
+      div.appendChild(zipBtn);
+
+      const openZipBtn = document.createElement('button');
+      openZipBtn.type = 'button';
+      openZipBtn.textContent = 'Open zip entry';
+      openZipBtn.onclick = async evt => {
+        evt.stopPropagation();
+        await openZipEntry(item.message_id, item.filename || 'zip');
+      };
+      div.appendChild(openZipBtn);
+    }
+
+    container.appendChild(div);
+  });
+}
+
+async function loadGeneratedFiles() {
+  const params = new URLSearchParams();
+  params.set('limit', '200');
+  if (state.projectId) {
+    params.set('project_id', String(state.projectId));
+  }
+
+  const data = await jget(`/api/files/generated?${params.toString()}`);
+  const container = els.generated;
+  container.innerHTML = '';
+  if (!data.items || data.items.length === 0) {
+    container.innerHTML = '<div class="small">No AI-generated files yet.</div>';
+    return;
+  }
+
+  data.items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'row import-row';
+    const name = escapeHtml(item.filename || '(unnamed)');
+    const conv = escapeHtml(item.conversation_title || 'Untitled');
+    const bytes = item.bytes ? ` • ${item.bytes} bytes` : '';
+    const created = escapeHtml(item.created_at || '');
+    div.innerHTML = `<b>${name}</b><div class="small">${created}${bytes}</div><div class="small">In: ${conv}</div>`;
+
+    if (item.stored) {
+      const menu = document.createElement('details');
+      menu.className = 'dot-menu';
+
+      const summary = document.createElement('summary');
+      summary.className = 'dot-trigger';
+      summary.textContent = '...';
+      summary.title = 'More actions';
+      summary.onclick = evt => evt.stopPropagation();
+      menu.appendChild(summary);
+
+      const items = document.createElement('div');
+      items.className = 'dot-menu-items';
+
+      const dlBtn = document.createElement('button');
+      dlBtn.type = 'button';
+      dlBtn.textContent = 'Download file';
+      dlBtn.onclick = evt => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        downloadStoredFile(item.message_id, item.filename || 'file');
+        menu.removeAttribute('open');
+      };
+      items.appendChild(dlBtn);
+
+      menu.appendChild(items);
+      div.appendChild(menu);
+    }
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.textContent = 'Open conversation';
+    openBtn.onclick = evt => {
+      evt.stopPropagation();
+      openConversation(item.conversation_id, item.conversation_title || 'Untitled');
+    };
+    div.appendChild(openBtn);
+
+    container.appendChild(div);
+  });
+}
+
+function updateModelHeader() {
+  const header = document.getElementById('modelInfo');
+  if (!header) return;
+  const modelText = currentModelDisplay || '(default)';
+  const sys = currentSystemSnippet ? ` | System: ${currentSystemSnippet}…` : '';
+  header.textContent = `Model: ${modelText}${sys}`;
+  const rsel = document.getElementById('replyModelSelect');
+  if (rsel) {
+    replyModelOverride = rsel.value || '';
+  }
+}
+
+async function selectProject(id, name) {
+  state.projectId = id;
+  state.projectName = name || (id === 0 ? 'All' : `Project ${id}`);
+  els.projectName.innerText = state.projectName;
+  updateModelHeader();
+  els.searchResults.innerHTML = '';
+  resetConversationView();
+  await loadSystemPrompt();
+  await loadProjectModel();
+  await loadChats();
+  await loadGeneratedFiles();
+  closeSidebarOnMobile();
+  resetMultiSelectState();
+}
+
+async function loadChats() {
+  const container = els.chats;
+  container.innerHTML = '';
+  if (state.projectId === 0) {
+    container.innerHTML = '<div class="small">Pick a project to see its chats (or use search across all).</div>';
+    return;
+  }
+  const rows = await jget(`/api/projects/${state.projectId}/conversations`);
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state">No conversations yet.</div>';
+    return;
+  }
+  rows.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'row';
+    btn.innerHTML = `<b>${escapeHtml(r.title || 'Untitled')}</b><div class="small">${escapeHtml(r.updated_at || '')}</div>`;
+    btn.onclick = () => openConversation(r.id, r.title || 'Untitled');
+    container.appendChild(btn);
+  });
+}
+
+async function loadMoreMessages(reset = false) {
+  if (!state.conversationId) return;
+  if (reset) {
+    messagePage.offset = 0;
+    messagePage.exhausted = false;
+    els.messagesInner.innerHTML = '';
+  }
+  if (messagePage.exhausted) return;
+
+  const container = els.messagesInner;
+  const res = await fetch(`/api/conversations/${state.conversationId}/messages?limit=${messagePage.limit}&offset=${messagePage.offset}&tail=0`);
+  const msgs = await res.json().catch(() => []);
+
+  if (!Array.isArray(msgs)) return;
+  if (msgs.length < messagePage.limit) {
+    messagePage.exhausted = true;
+  }
+  messagePage.offset += msgs.length;
+
+  if (container.innerHTML.includes('empty-state')) {
+    container.innerHTML = '';
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  msgs.forEach(m => {
+    let roleClass;
+    if (m.role === 'assistant') {
+      roleClass = 'assistant';
+    } else if (m.role === 'user') {
+      roleClass = 'user';
+    } else {
+      roleClass = 'system';
+    }
+    const bubble = document.createElement('div');
+    bubble.className = `bubble ${roleClass}`;
+
+    const header = document.createElement('div');
+    header.className = 'small';
+    const roleLabel = document.createElement('strong');
+    roleLabel.textContent = m.role;
+    header.appendChild(roleLabel);
+    header.appendChild(document.createTextNode(` • ${m.created_at || ''}`));
+    if (m.role === 'assistant') {
+      const replayBtn = document.createElement('button');
+      replayBtn.type = 'button';
+      replayBtn.textContent = 'Replay';
+      replayBtn.style.marginLeft = '8px';
+      replayBtn.onclick = evt => {
+        evt.stopPropagation();
+        replayMessage(m.id);
+      };
+      header.appendChild(replayBtn);
+    }
+    bubble.appendChild(header);
+
+    const body = document.createElement('pre');
+    body.innerHTML = escapeHtml(m.content || '');
+    bubble.appendChild(body);
+    fragment.appendChild(bubble);
+    renderMathSafe(bubble);
+  });
+
+  container.appendChild(fragment);
+
+  if (messagePage.exhausted) {
+    removeLoadMoreButton();
+  } else {
+    ensureLoadMoreButton();
+  }
+
+  // Keep scroll pinned to bottom when we just loaded the first page
+  if (reset) {
+    requestAnimationFrame(() => {
+      els.messages.scrollTop = els.messages.scrollHeight;
+    });
+  }
+}
+
+function ensureLoadMoreButton() {
+  // With large page size, we typically load everything once; keep button absent.
+}
+
+function removeLoadMoreButton() {
+  const btn = document.getElementById('loadMoreBtn');
+  if (btn) btn.remove();
+}
+
+function resetMultiSelectState() {
+  els.msStatus.textContent = state.conversationId ? 'Click "Load assistant messages" to select.' : 'Select a conversation first.';
+  els.msList.innerHTML = '';
+  els.msCopyBtn.disabled = true;
+}
+
+async function loadMultiSelect() {
+  if (!state.conversationId) {
+    els.msStatus.textContent = 'Select a conversation first.';
+    return;
+  }
+  els.msStatus.textContent = 'Loading assistant messages…';
+  els.msCopyBtn.disabled = true;
+  els.msList.innerHTML = '';
+  try {
+    const res = await fetch(`/api/conversations/${state.conversationId}/messages?limit=1000&offset=0&tail=0`);
+    const msgs = await res.json().catch(() => []);
+    const assistants = Array.isArray(msgs) ? msgs.filter(m => m.role === 'assistant') : [];
+    if (!assistants.length) {
+      els.msStatus.textContent = 'No assistant messages found.';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    assistants.forEach((m, idx) => {
+      const label = document.createElement('label');
+      label.style.display = 'block';
+      label.style.marginBottom = '4px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = m.id;
+      cb.dataset.content = m.content || '';
+      cb.onchange = updateMultiSelectCopyState;
+      label.appendChild(cb);
+      const txt = document.createElement('span');
+      const snippet = (m.content || '').slice(0, 120).replaceAll(/\s+/g, ' ');
+      txt.textContent = ` ${idx + 1}. ${snippet}${m.content && m.content.length > 120 ? '…' : ''}`;
+      label.appendChild(txt);
+      frag.appendChild(label);
+    });
+    els.msList.innerHTML = '';
+    els.msList.appendChild(frag);
+    els.msStatus.textContent = `Loaded ${assistants.length} assistant message(s).`;
+    updateMultiSelectCopyState();
+  } catch (err) {
+    console.error('Failed to load assistant messages:', err);
+    els.msStatus.textContent = 'Failed to load messages.';
+  }
+}
+
+function updateMultiSelectCopyState() {
+  const checks = els.msList.querySelectorAll('input[type="checkbox"]:checked');
+  els.msCopyBtn.disabled = checks.length === 0;
+}
+
+async function copyMultiSelect() {
+  const checks = Array.from(els.msList.querySelectorAll('input[type="checkbox"]:checked'));
+  if (!checks.length) return;
+  const texts = checks.map(cb => cb.dataset.content || '').filter(Boolean);
+  const blob = texts.join('\n\n');
+  try {
+    await navigator.clipboard.writeText(blob);
+    els.msStatus.textContent = `Copied ${checks.length} message(s).`;
+  } catch (err) {
+    console.error('Clipboard copy failed:', err);
+    els.msStatus.textContent = 'Clipboard blocked—select and copy manually.';
+    const ta = document.createElement('textarea');
+    ta.value = blob;
+    document.body.appendChild(ta);
+    ta.select();
+  }
+}
+
+async function createChat() {
+  if (state.projectId === 0) {
+    alert('Select a project first');
+    return;
+  }
+  const title = (els.newChatTitle.value || '').trim();
+  els.newChatTitle.value = '';
+  const res = await fetch(`/api/projects/${state.projectId}/conversations/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    alert(data.error || `Failed (${res.status})`);
+    return;
+  }
+  await loadChats();
+  await openConversation(data.id, data.title || 'Untitled');
+}
+
+async function openConversation(id, title) {
+  state.conversationId = id;
+  els.chatTitle.innerText = title;
+  els.replyBox.disabled = false;
+  els.replyButton.disabled = false;
+  els.deleteConvBtn.disabled = false;
+  messagePage.offset = 0;
+  messagePage.exhausted = false;
+  els.messagesInner.innerHTML = '';
+  await loadMoreMessages(true);
+  els.replyStatus.textContent = '';
+  // Scroll to bottom after loading history
+  setTimeout(() => {
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }, 50);
+  resetMultiSelectState();
+}
+
+async function doSearch() {
+  const q = els.searchBox.value.trim();
+  if (!q) {
+    els.searchResults.innerHTML = '';
+    return;
+  }
+  const pid = state.projectId;
+  const rows = await jget(`/api/search?q=${encodeURIComponent(q)}&project_id=${pid}&limit=50`);
+  const container = els.searchResults;
+  container.innerHTML = `<div class="small">Results (scoped to: ${escapeHtml(state.projectName)})</div>`;
+  rows.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'row';
+    btn.innerHTML = `<b>${escapeHtml(r.conversation_title || 'Untitled')}</b> <span class="pill">${escapeHtml(r.role)}</span>
+                     <div class="small">${escapeHtml(r.snippet || '')}</div>`;
+    btn.onclick = () => openConversation(r.conversation_id, r.conversation_title || 'Untitled');
+    container.appendChild(btn);
+  });
+}
+
+async function attachToCurrent(convId) {
+  if (state.projectId === 0) {
+    alert("Select a project first (not 'All').");
+    return;
+  }
+  try {
+    await jpost(`/api/projects/${state.projectId}/attach`, { conversation_id: convId });
+    await loadChats();
+    await loadUnassigned();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function createProject() {
+  const nameInput = document.getElementById('newProjectName');
+  const name = nameInput.value.trim();
+  if (!name) return;
+  try {
+    await jpost('/api/projects', { name });
+    nameInput.value = '';
+    await loadProjects();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function loadSystemPrompt() {
+  if (state.projectId === 0) {
+    els.systemPrompt.value = '';
+    els.systemPrompt.disabled = true;
+    currentSystemSnippet = '';
+    updateModelHeader();
+    return;
+  }
+  els.systemPrompt.disabled = false;
+  const data = await jget(`/api/projects/${state.projectId}/system_prompt`);
+  els.systemPrompt.value = data.system_prompt || '';
+  currentSystemSnippet = (data.system_prompt || '').slice(0, 140);
+  updateModelHeader();
+}
+
+async function saveSystemPrompt() {
+  if (state.projectId === 0) {
+    alert('Select a project first');
+    return;
+  }
+  await fetch(`/api/projects/${state.projectId}/system_prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system_prompt: els.systemPrompt.value })
+  });
+  currentSystemSnippet = (els.systemPrompt.value || '').slice(0, 140);
+  updateModelHeader();
+}
+
+async function loadModels() {
+  const res = await fetch('/api/models');
+  const models = await res.json().catch(() => []);
+  modelsCache = models;
+  const sel = els.projectModelSelect;
+  sel.innerHTML = '<option value="">(default)</option>';
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    sel.appendChild(opt);
+  });
+
+  // Populate per-reply override dropdown when present
+  if (document.getElementById('replyModelSelect')) {
+    const rsel = document.getElementById('replyModelSelect');
+    const prev = rsel.value;
+    rsel.innerHTML = '<option value="">(project default)</option>';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      rsel.appendChild(opt);
+    });
+    rsel.value = prev || '';
+    replyModelOverride = rsel.value || '';
+  }
+}
+
+async function loadProjectModel() {
+  const sel = els.projectModelSelect;
+  if (state.projectId === 0) {
+    sel.value = '';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  const data = await jget(`/api/projects/${state.projectId}/model`);
+  sel.value = data.model || '';
+   currentModelDisplay = data.model || '(default)';
+   updateModelHeader();
+}
+
+async function saveProjectModel() {
+  if (state.projectId === 0) {
+    alert('Select a project first');
+    return;
+  }
+  await fetch(`/api/projects/${state.projectId}/model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: els.projectModelSelect.value })
+  });
+  currentModelDisplay = els.projectModelSelect.value || '(default)';
+  updateModelHeader();
+}
+
+function validateReplyInput() {
+  if (!state.conversationId) {
+    return { ok: false, message: 'Select a conversation first.' };
+  }
+  const text = (els.replyBox.value || '').trim();
+  if (!text) {
+    return { ok: false, message: 'Enter a message.' };
+  }
+  return { ok: true, text };
+}
+
+function renderCouncilLog(data) {
+  if (!councilMode || !data.deliberation_log) {
+    els.councilLog.textContent = '';
+    return;
+  }
+  const rounds = data.rounds_run ? `Rounds: ${data.rounds_run}` : '';
+  const agree = data.agreed ? 'Agreement detected' : 'No agreement detected';
+  const lines = data.deliberation_log.map(entry => `Round ${entry.round} • ${entry.participant}: ${entry.response}`).join('\n');
+  els.councilLog.textContent = `Council deliberation (${agree}${rounds ? ' · ' + rounds : ''}):\n${lines}`;
+}
+
+function buildCouncilParticipants() {
+  const picks = [];
+  const firstOpenAI = modelsCache.find(m => m.startsWith('openai:'));
+  const firstAnthropic = modelsCache.find(m => m.startsWith('anthropic:'));
+  const firstGemini = modelsCache.find(m => m.startsWith('gemini:'));
+  if (firstOpenAI) picks.push(firstOpenAI);
+  if (firstAnthropic) picks.push(firstAnthropic);
+  if (firstGemini) picks.push(firstGemini);
+  if (!picks.length) {
+    picks.push(...modelsCache.slice(0, 3));
+  }
+  return picks.slice(0, 3);
+}
+
+async function sendReply() {
+  const validation = validateReplyInput();
+  if (!validation.ok) {
+    els.replyStatus.textContent = validation.message;
+    return;
+  }
+
+  const text = validation.text;
+  els.replyStatus.textContent = 'Sending…';
+  els.replyBox.disabled = true;
+  els.replyButton.disabled = true;
+
+  const endpoint = councilMode
+    ? `/api/conversations/${state.conversationId}/council_reply`
+    : `/api/conversations/${state.conversationId}/reply`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        project_id: state.projectId || null,
+        model: replyModelOverride || undefined,
+        participants: councilMode ? buildCouncilParticipants() : undefined
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      throw new Error((data && data.error) || `Request failed (${res.status})`);
+    }
+    els.replyBox.value = '';
+    await loadChats();
+    await openConversation(state.conversationId, els.chatTitle.innerText);
+    renderCouncilLog(data);
+    els.messages.scrollTop = els.messages.scrollHeight;
+    els.replyStatus.textContent = '';
+  } catch (err) {
+    els.replyStatus.textContent = (err && err.message) || 'Error sending message.';
+  } finally {
+    if (state.conversationId) {
+      els.replyBox.disabled = false;
+      els.replyButton.disabled = false;
+      els.replyBox.focus();
+    } else {
+      resetConversationView();
+    }
+  }
+}
+
+async function importPdf() {
+  if (!state.conversationId) {
+    els.pdfStatus.textContent = 'Select a conversation first.';
+    return;
+  }
+  const file = els.pdfFile.files[0];
+  if (!file) {
+    els.pdfStatus.textContent = 'Choose a PDF file.';
+  }
+}
+
+async function importGenericFile() {
+  if (!state.conversationId) {
+    els.genericStatus.textContent = 'Select a conversation first.';
+    return;
+  }
+  const files = Array.from(els.genericFile.files || []);
+  if (!files.length) {
+    els.genericStatus.textContent = 'Choose one or more files (text, code, image, zip, etc.).';
+    return;
+  }
+
+  els.genericStatus.textContent = `Uploading ${files.length} file(s)…`;
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+
+    try {
+      const res = await fetch(`/api/conversations/${state.conversationId}/import_file`, {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Import failed (${res.status})`);
+      }
+      let truncatedSuffix = '';
+      if (data.truncated) {
+        truncatedSuffix = data.kind === 'binary'
+          ? ' (base64 preview truncated)'
+          : ' (truncated)';
+      }
+      const detail = data.kind === 'binary'
+        ? ` ${data.bytes} bytes${truncatedSuffix}`
+        : ` ${data.chars || data.preview_chars || ''} chars${truncatedSuffix}`;
+      els.genericStatus.textContent = `Imported ${file.name} (${data.kind || 'file'}${detail})`;
+      await openConversation(state.conversationId, els.chatTitle.innerText);
+    } catch (err) {
+      els.genericStatus.textContent = (err && err.message) || `Import failed for ${file.name}`;
+      break;
+    }
+  }
+  els.genericFile.value = '';
+}
+
+async function analyzeImage() {
+  if (!state.conversationId) {
+    els.imageStatus.textContent = 'Select a conversation first.';
+    return;
+  }
+  const files = Array.from(els.imageFile.files || []);
+  if (!files.length) {
+    els.imageStatus.textContent = 'Choose one or more image files.';
+    return;
+  }
+
+  const prompt = (els.imagePrompt.value || '').trim();
+  els.imageStatus.textContent = `Analyzing ${files.length} image(s)…`;
+  const resultsContainer = document.getElementById('imageResults');
+  resultsContainer.innerHTML = '';
+
+  let idx = 0;
+  for (const file of files) {
+    idx += 1;
+    const card = document.createElement('div');
+    card.style.border = '1px solid #ddd';
+    card.style.borderRadius = '8px';
+    card.style.padding = '8px';
+    card.style.display = 'flex';
+    card.style.gap = '8px';
+    card.style.alignItems = 'flex-start';
+
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.style.width = '120px';
+    img.style.height = '120px';
+    img.style.objectFit = 'cover';
+    img.alt = file.name;
+
+    const textDiv = document.createElement('div');
+    textDiv.innerHTML = `<b>${escapeHtml(file.name)}</b><div class="small">Uploading… (${idx}/${files.length})</div>`;
+
+    card.appendChild(img);
+    card.appendChild(textDiv);
+    resultsContainer.appendChild(card);
+
+    const fd = new FormData();
+    fd.append('file', file);
+    if (prompt) fd.append('prompt', prompt);
+
+    try {
+      const res = await fetch(`/api/conversations/${state.conversationId}/analyze_image`, {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Analyze failed (${res.status})`);
+      }
+
+      textDiv.innerHTML = `<b>${escapeHtml(file.name)}</b><div class="small">Done</div><div>${escapeHtml(data.analysis && data.analysis.text || '')}</div>`;
+    } catch (err) {
+      textDiv.innerHTML = `<b>${escapeHtml(file.name)}</b><div class="small" style="color:#b00;">${(err && err.message) || 'Failed'}</div>`;
+    }
+  }
+
+  els.imageStatus.textContent = 'Image analysis complete.';
+  els.imageFile.value = '';
+  await openConversation(state.conversationId, els.chatTitle.innerText);
+}
+
+async function listZipEntries(messageId, label) {
+  try {
+    const res = await fetch(`/api/files/${messageId}/zip_entries`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    const entries = data.entries || [];
+    const names = entries.map(e => `${e.name} (${e.size} bytes)`).join('\n');
+    alert(`Zip contents for ${label || 'zip'}:\n${names || '(empty)'}`);
+  } catch (err) {
+    alert(err && err.message ? err.message : 'Failed to read zip.');
+  }
+}
+
+async function openZipEntry(messageId, label) {
+  const path = prompt(`Enter zip entry path inside ${label || 'zip'}:`);
+  if (!path) return;
+  try {
+    const res = await fetch(`/api/files/${messageId}/zip_entry?inner_path=${encodeURIComponent(path)}&max_bytes=200000`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    const preview = data.text || '';
+    alert(`Entry: ${path}\n\n${preview}`);
+  } catch (err) {
+    alert(err && err.message ? err.message : 'Failed to read zip entry.');
+  }
+}
+
+async function deleteConversation() {
+  if (!state.conversationId) return;
+  const title = els.chatTitle.innerText || `Conversation ${state.conversationId}`;
+  if (!confirm(`Delete "${title}"? This removes all its messages.`)) return;
+
+  const cid = state.conversationId;
+  const res = await fetch(`/api/conversations/${cid}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    alert(data.error || `Delete failed (${res.status})`);
+    return;
+  }
+  resetConversationView();
+  await loadChats();
+  await loadUnassigned();
+  els.searchResults.innerHTML = '';
+}
+
+async function replayMessage(messageId) {
+  const res = await fetch(`/api/messages/${messageId}/replay`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    alert(data.error || `Replay failed (${res.status})`);
+    return;
+  }
+  alert('Replay executed. Compare output in console.');
+  console.log('Replay result:', data.result);
+}
+
+async function importChats() {
+  const file = els.importFile.files[0];
+  const projectName = els.importProjectName.value.trim() || 'Imported';
+  if (!file) {
+    alert('Choose a conversations.json or chat.html file');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('project', projectName);
+  if (file.name.toLowerCase().endsWith('.json')) {
+    fd.append('conversations_json', file);
+  } else {
+    fd.append('chat_html', file);
+  }
+
+  const res = await fetch('/api/import', { method: 'POST', body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || (data && data.error)) {
+    alert((data && data.error) || `Import failed (${res.status})`);
+    return;
+  }
+
+  alert(`Imported into project: ${data.project}`);
+  await loadProjects();
+  await loadUnassigned();
+  if (state.projectId === data.project_id) {
+    await loadChats();
+  }
+}
+
+async function refreshSidebar() {
+  await loadProjects();
+  await loadUnassigned();
+  await loadChats();
+  await loadImports();
+  await loadGeneratedFiles();
+}
+
+resetConversationView();
+await loadModels();
+await loadProjects();
+await loadUnassigned();
+await loadSystemPrompt();
+await loadProjectModel();
+await loadImports();
+await loadGeneratedFiles();
+
+Object.assign(globalThis, {
+  createProject,
+  selectProject,
+  saveSystemPrompt,
+  saveProjectModel,
+  doSearch,
+  sendReply,
+  attachToCurrent,
+  importChats,
+  importGenericFile,
+  analyzeImage,
+  listZipEntries,
+  openZipEntry,
+  deleteConversation,
+  createChat,
+  replayMessage,
+  refreshSidebar,
+  loadGeneratedFiles,
+  toggleSidebar,
+  closeSidebar,
+  downloadStoredFile
+  ,toggleCouncilMode
+});
+</script>
+</body>
+</html>
