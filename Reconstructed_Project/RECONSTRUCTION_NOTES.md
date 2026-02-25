@@ -27,11 +27,3 @@
 - Only bytecode for these modules was found under `static/__pycache__/`.
 
 These missing modules are likely required for a fully runnable application.
-
-
-## Follow-up reconstruction
-- Reconstructed missing modules and added them under `src/`:
-  - `webui.py` (FastAPI app wiring + API routes used by UI)
-  - `tools_search.py` (project search, web search, URL fetch)
-  - `table_tools.py` (CSV inspect/transform and chart generation)
-- This resolves the previous import-level blockers for these modules.
