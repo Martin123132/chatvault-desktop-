@@ -1,440 +1,194 @@
+
 ⭐ ChatVault
 
-Your local, searchable AI conversation archive + live chat assistant.
+Your local, searchable AI conversation archive with multi-model intelligence.
 
-## Install
+ChatVault stores ChatGPT + Claude conversations locally, lets you search them, tag them, analyse them, and even run offline AI reasoning with local models like Llama 3 via Ollama.
 
-```bash
+Everything lives in your chatvault.sqlite3.
+Nothing is uploaded. Nothing leaves your machine.
+
+⸻
+
+🚀 Installation
+
 python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Core commands
-
-```bash
-python chatvault.py --help
-python chatvault.py import --chat-html path/to/chat.html
-python chatvault.py import-claude --export path/to/claude_export.json
-python chatvault.py search "transformer AND memory"
-python chatvault.py search "how do I optimize this" --semantic --limit 5
-python chatvault.py ctx 42 --window 6
-python chatvault.py stats
-python chatvault.py titles
-python chatvault.py tag 42 --tag research
-python chatvault.py search-tags research
-python chatvault.py replay 3 --speed 1.5
-python chatvault.py council --question "How do we design a CPU?"
-python chatvault.py summarize --range last_30_days
-python chatvault.py recommend
-```
-
-## ChatGPT HTML import
-
-```bash
-python chatvault.py import --chat-html exports/chat.html
-```
-
-Notes:
-- Conversation titles are generated automatically from the first user message.
-- Message embeddings are generated during import for semantic search.
-
-## Claude import
-
-Use a Claude export JSON file and import with:
-
-```bash
-python chatvault.py import-claude --export exports/claude.json
-```
-
-Imported conversations use the same schema and store `provider='claude'` in the conversation metadata column.
-
-
-## LLM backend switch
-
-Set backend through environment variables:
-
-```bash
-CHATVAULT_LLM_BACKEND=openai   # or anthropic / ollama
-```
-
-Commands that use LLMs (`chat`, `council`, `summarize`, `recommend`) route through a shared backend adapter.
-
-## Stats
-
-```bash
-python chatvault.py stats
-```
-
-Shows total messages, total conversations, date range, and messages/conversation mean/min/max.
-
-## Tagging
-
-Add tags to messages and query by tag:
-
-```bash
-python chatvault.py tag 101 --tag bug
-python chatvault.py search-tags bug
-```
-
-## Titles
-
-List all conversation IDs and titles:
-
-```bash
-python chatvault.py titles
-```
-
-## Replay
-
-Replay a conversation in timeline order with delays based on original message timestamp gaps:
-
-```bash
-python chatvault.py replay 12 --speed 1.5
-```
-
-Higher `--speed` means faster playback.
-
-## Council mode
-
-Council mode asks the same question to multiple backends, stores all responses, then synthesizes a final answer using OpenAI:
-- OpenAI (`OPENAI_API_KEY`)
-- Claude (`ANTHROPIC_API_KEY`)
-- local Ollama (`http://localhost:11434`)
-
-```bash
-python chatvault.py council --question "How do we design a CPU?"
-```
-
-All intermediate responses and the synthesis are saved to SQLite in a dedicated `council` conversation.
-
-## Summarize
-
-Generate rolling summaries over message ranges:
-
-```bash
-python chatvault.py summarize --range last_30_days
-```
-
-Output includes:
-- high-level summary
-- common themes
-- recurring tasks
-- action items
-
-Use `--no-llm` for heuristic-only mode.
-
-## Recommend
-
-Scan the full archive and suggest:
-- unfinished threads
-- ideas mentioned multiple times
-- action items/plans
-- related conversations
-
-```bash
-python chatvault.py recommend
-```
-
-Use `--no-llm` for heuristic-only recommendations.
-
-## Semantic search
-
-Semantic mode uses `sentence-transformers` embeddings locally and saves vectors in SQLite.
-The first run may download the model once; after that it works offline.
-
-```bash
-python chatvault.py search "which conversation discussed sqlite fts ranking" --semantic --limit 5
-```
-
-
-## Offline mode
-
-To run LLM features fully offline, use local Ollama and enable offline mode:
-
-```bash
-CHATVAULT_LLM_BACKEND=ollama
-CHATVAULT_OFFLINE=true
-ollama pull llama3
-ollama serve
-```
-
-With this setup, `chat`, `council`, `summarize`, and `recommend` can run without remote LLM API calls.
-
-## Database
-
-By default data is stored in `chatvault.sqlite3`.
-
-Schema includes:
-- `conversations` (with `provider` + `title`)
-- `messages`
-- `message_tags`
-- `message_embeddings`
-- `messages_fts`
-# ⭐ ChatVault
-
-Your local, searchable AI conversation archive + live chat assistant.
-
-ChatVault lets you:
-
-- Import your ChatGPT and Claude histories
-- Store them in a local SQLite database
-- Search with both keyword (FTS) and semantic search
-- View context around any message
-- Tag important messages
-- See stats and titles for conversations
-- Replay timelines, summarise periods, and get recommendations
-- Run “council” multi-model debates and store the results
-- Browse everything via a minimal web dashboard
-
-All data lives **locally** in your own `chatvault.sqlite3` file.
-
----
-
-## 🚀 Install
-
-```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 Create your environment file:
 
 cp .env.example .env
 
-Then edit .env and set at least:
+Then edit .env and set:
 
-OPENAI_API_KEY=your_openai_key_here
+OPENAI_API_KEY=your_key_here     # optional if running offline
 
-Optional keys (if you use them) can also go in .env, for example:
+Optional fields in .env:
 	•	ANTHROPIC_API_KEY – for Claude
-	•	OLLAMA_HOST – if you use Ollama locally
+	•	CHATVAULT_LLM_BACKEND=openai|anthropic|ollama
+	•	CHATVAULT_OFFLINE=true|false
+	•	OLLAMA_HOST, OLLAMA_MODEL
+	•	CHATVAULT_EMBEDDINGS_MODEL (local sentence-transformers)
 
 ⸻
 
-📦 Core CLI commands
-
-From the repo root (with the venv active):
+📦 Core Commands
 
 python chatvault.py --help
 
-Typical usage:
+Import ChatGPT
 
-# Import ChatGPT HTML export
 python chatvault.py import --chat-html exports/chat.html
 
-# Import Claude JSON export
+Import Claude
+
 python chatvault.py import-claude --export exports/claude.json
 
-# Keyword search (SQLite FTS)
+Keyword search (FTS)
+
 python chatvault.py search "transformer AND memory"
 
-# Semantic search (embeddings)
+Semantic search (local embeddings)
+
 python chatvault.py search "how do I optimize this" --semantic --limit 5
 
-# View a message with context
+View a message with context
+
 python chatvault.py ctx 42 --window 6
 
-# Live chat session (logs everything to the DB)
-python chatvault.py chat --title "CPU design session"
-
-By default, data is stored in chatvault.sqlite3.
-You can override it with --db path/to/other.sqlite3 on any command if you like.
-
-⸻
-
-📥 ChatGPT HTML import
-
-Export from ChatGPT via:
-
-Settings → Data Controls → Export Data
-
-You’ll get a ZIP in your email. Extract it and find chat.html, then run:
-
-python chatvault.py import --chat-html exports/chat.html
-
-Notes:
-	•	Conversation titles are generated automatically from the first user message.
-	•	Message embeddings are generated during import for semantic search (if the embedding backend is available).
-
-⸻
-
-🤖 Claude import
-
-Use a Claude export JSON file and import with:
-
-python chatvault.py import-claude --export exports/claude.json
-
-Imported conversations reuse the same schema and store provider = 'claude' in the conversations table.
-
-⸻
-
-📊 Stats
-
-Basic archive stats:
+Stats overview
 
 python chatvault.py stats
 
-Example output:
-
-total messages: 240
-total conversations: 16
-date range: 2024-01-09T12:03:11+00:00 -> 2025-02-15T17:49:22+00:00
-messages/conversation mean=15.00 min=2 max=48
-
-
-⸻
-
-🏷 Tagging
-
-Tag important messages and search by tag:
-
-python chatvault.py tag 101 --tag bug
-python chatvault.py tag 101 --tag research
-
-python chatvault.py search-tags bug
-
-Tags are stored in a message_tags table linked to message IDs.
-
-⸻
-
-🧾 Titles
-
-List all conversation IDs and titles:
+Titles list
 
 python chatvault.py titles
 
-Titles are auto-generated on import (from the first user message), but you can use this to quickly scan what’s in the archive.
+Tag messages
+
+python chatvault.py tag 101 --tag research
+python chatvault.py search-tags research
+
+Replay timelines
+
+python chatvault.py replay 12 --speed 1.5
+
 
 ⸻
 
-🔍 Semantic search
+🤖 AI-Powered Tools
 
-Semantic search uses embeddings stored in SQLite:
+Summarise (LLM or offline heuristics)
 
-python chatvault.py search "which conversation discussed sqlite fts ranking" --semantic --limit 5
-
-If the sentence-transformers model or embedding backend isn’t available, ChatVault will fall back gracefully and print a clear warning.
-
-⸻
-
-🎞 Replay
-
-Replay a conversation as a timeline:
-
-python chatvault.py replay 1 --speed 1.5
-
-Messages are printed in chronological order with delays based on timestamp gaps, scaled by --speed (higher speed = faster replay).
-
-⸻
-
-🧠 Summarise
-
-Generate a high-level summary over a time range:
-
-# Last 30 days, with LLM enrichment
 python chatvault.py summarize --range last_30_days
-
-# Run without calling any LLMs (heuristic only)
 python chatvault.py summarize --range last_30_days --no-llm
 
-The summariser can include:
-	•	overall summary
-	•	themes
-	•	recurring tasks
-	•	action items
+Recommend (unfinished ideas, repeated themes)
 
-⸻
-
-📌 Recommend
-
-Get suggestions on what to revisit:
-
-# Use LLM to enrich suggestions
 python chatvault.py recommend
-
-# Heuristic only, no LLM calls
 python chatvault.py recommend --no-llm
 
-Recommendations may include:
-	•	unfinished threads
-	•	repeated ideas
-	•	action items or plans
-	•	related conversations worth revisiting
+Council Mode (multi-model debate)
 
-⸻
-
-🏛 Council mode
-
-Run a multi-model “council” on a question and store all responses plus a synthesis:
+Ask the same question to multiple backends (OpenAI, Anthropic, Ollama) and store:
+	•	each model’s answer
+	•	a synthesised final answer
+	•	full reasoning trail
 
 python chatvault.py council --question "How do we design a CPU?"
 
-The council workflow:
-	•	Sends the same question to multiple backends (e.g. OpenAI, Claude, possibly local models)
-	•	Stores each model’s answer as messages in the database
-	•	Uses OpenAI to synthesise a final unified answer
-	•	Saves the whole exchange as a dedicated council conversation
-
-This turns ChatVault into a local log of multi-agent debates.
+All council messages are saved in a dedicated conversation.
 
 ⸻
 
-🗂 Database layout
+🔍 Semantic Search (Offline-Ready)
 
-By default, data is stored in:
+ChatVault uses sentence-transformers locally.
+	•	First run may download the model once
+	•	After that, it works fully offline
+	•	Embeddings are stored in SQLite for fast recall
 
-chatvault.sqlite3
+python chatvault.py search "sqlite fts ranking" --semantic
 
-Core tables include:
-	•	conversations (with provider, title, etc.)
-	•	messages
-	•	messages_fts (full-text index)
-	•	message_tags
-	•	message_embeddings
-
-You own this file; it never leaves your machine.
 
 ⸻
 
-🌐 Web dashboard (optional)
+🔒 100% Offline Mode
 
-ChatVault also ships with a small FastAPI dashboard in src/app.py with:
-	•	search bar
-	•	results list
+To use ChatVault with local-only models (no OpenAI / no Anthropic):
+
+CHATVAULT_LLM_BACKEND=ollama
+CHATVAULT_OFFLINE=true
+OLLAMA_MODEL=llama3
+
+Then run:
+
+ollama pull llama3
+ollama serve
+
+Now commands like:
+
+python chatvault.py chat
+python chatvault.py council
+python chatvault.py summarize
+python chatvault.py recommend
+
+all run offline, using local Llama 3.
+
+⸻
+
+🌐 Web Dashboard (Optional)
+
+ChatVault includes a small FastAPI dashboard for:
+	•	search
+	•	results
 	•	conversation viewer
 	•	context viewer
-	•	tag panel
+	•	tagging
 
-To run it (example):
+Launch it:
 
-# Inside your virtual environment
 uvicorn src.app:app --host 127.0.0.1 --port 8000
 
-Then open:
+Open:
 
 http://127.0.0.1:8000
 
-in your browser.
+
+⸻
+
+🗄 Database Layout
+
+Stored locally:
+
+chatvault.sqlite3
+
+Tables:
+	•	conversations (title, provider, metadata)
+	•	messages
+	•	messages_fts (keyword search)
+	•	message_tags
+	•	message_embeddings
+
+You own this file completely.
 
 ⸻
 
 🙌 Contributing
 
-Ideas, issues, and pull requests are welcome.
-
-You can:
-	•	file bugs
-	•	suggest new import formats
-	•	improve the web UI
-	•	extend council/semantic workflows
+PRs, ideas, and feature requests are welcome — especially:
+	•	new importers
+	•	extra reasoning tools
+	•	more offline model support
+	•	improved dashboard
 
 ⸻
 
 📝 License
 
-ChatVault is released under the MIT License.
-See the MIT License file for full details.
+MIT License.
+See the included file for full text.
 
----
+⸻
 
