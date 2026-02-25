@@ -4,6 +4,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 
+from semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -78,6 +80,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,          -- 'chatgpt_export' | 'api_chat'
     external_id TEXT UNIQUE,       -- OpenAI export conversation id (if any)
+    provider TEXT NOT NULL DEFAULT 'chatgpt',
     title TEXT,
     created_at TEXT,
     updated_at TEXT
@@ -105,6 +108,23 @@ CREATE TABLE IF NOT EXISTS messages (
         api_response_json TEXT,
         request_hash TEXT,
     FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS message_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(message_id, tag),
+    FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS message_embeddings (
+    message_id INTEGER PRIMARY KEY,
+    embedding_json TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 
 -- fast full-text search (proven)
@@ -147,6 +167,12 @@ def _ensure_schema_upgrades(con: sqlite3.Connection) -> None:
     if added:
         con.commit()
 
+    cur.execute("PRAGMA table_info(conversations)")
+    conv_cols = {row[1] for row in cur.fetchall()}
+    if "provider" not in conv_cols:
+        cur.execute("ALTER TABLE conversations ADD COLUMN provider TEXT NOT NULL DEFAULT 'chatgpt'")
+        con.commit()
+
 
 def _ensure_triggers(con: sqlite3.Connection) -> None:
     """Recreate FTS triggers to the latest definitions."""
@@ -186,11 +212,18 @@ def list_projects(con: sqlite3.Connection) -> List[Tuple[int, str]]:
     return cur.fetchall()
 
 
-def create_conversation(con: sqlite3.Connection, source: str, title: str, external_id: Optional[str], created_at: Optional[str]) -> int:
+def create_conversation(
+    con: sqlite3.Connection,
+    source: str,
+    title: str,
+    external_id: Optional[str],
+    created_at: Optional[str],
+    provider: str = "chatgpt",
+) -> int:
     cur = con.cursor()
     cur.execute(
-        "INSERT INTO conversations(source, external_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
-        (source, external_id, title, created_at or utc_now_iso(), utc_now_iso())
+        "INSERT INTO conversations(source, external_id, provider, title, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+        (source, external_id, provider, title, created_at or utc_now_iso(), utc_now_iso())
     )
     con.commit()
     if cur.lastrowid is None:
@@ -198,22 +231,29 @@ def create_conversation(con: sqlite3.Connection, source: str, title: str, extern
     return int(cur.lastrowid)
 
 
-def upsert_conversation_from_export(con: sqlite3.Connection, external_id: str, title: str, created_at: Optional[str], updated_at: Optional[str]) -> int:
+def upsert_conversation_from_export(
+    con: sqlite3.Connection,
+    external_id: str,
+    title: str,
+    created_at: Optional[str],
+    updated_at: Optional[str],
+    provider: str = "chatgpt",
+) -> int:
     cur = con.cursor()
     cur.execute("SELECT id FROM conversations WHERE external_id=?", (external_id,))
     row = cur.fetchone()
     if row:
         conv_id = int(row[0])
         cur.execute(
-            "UPDATE conversations SET title=?, created_at=COALESCE(created_at, ?), updated_at=? WHERE id=?",
-            (title, created_at or utc_now_iso(), updated_at or utc_now_iso(), conv_id)
+            "UPDATE conversations SET title=?, provider=?, created_at=COALESCE(created_at, ?), updated_at=? WHERE id=?",
+            (title, provider, created_at or utc_now_iso(), updated_at or utc_now_iso(), conv_id)
         )
         con.commit()
         return conv_id
 
     cur.execute(
-        "INSERT INTO conversations(source, external_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
-        ("chatgpt_export", external_id, title, created_at or utc_now_iso(), updated_at or utc_now_iso())
+        "INSERT INTO conversations(source, external_id, provider, title, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+        ("chatgpt_export", external_id, provider, title, created_at or utc_now_iso(), updated_at or utc_now_iso())
     )
     con.commit()
     if cur.lastrowid is None:
@@ -271,6 +311,7 @@ def add_message(
     external_node_id: Optional[str] = None,
     parent_external_node_id: Optional[str] = None,
     meta: Optional[Dict[str, Any]] = None,
+    create_embedding: bool = False,
 ) -> int:
     cur = con.cursor()
     cur.execute(
@@ -288,7 +329,110 @@ def add_message(
     con.commit()
     if cur.lastrowid is None:
         raise RuntimeError("Failed to get last row id for new message.")
-    return int(cur.lastrowid)
+    message_id = int(cur.lastrowid)
+    if create_embedding:
+        upsert_message_embedding(con, message_id=message_id, content=content)
+    return message_id
+
+
+def upsert_message_embedding(con: sqlite3.Connection, message_id: int, content: str, model_name: str = DEFAULT_EMBED_MODEL) -> None:
+    text = (content or "").strip()
+    if not text:
+        return
+    try:
+        vec = embed_text(text, model_name=model_name)
+    except Exception:
+        return
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO message_embeddings(message_id, embedding_json, model_name, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(message_id) DO UPDATE SET
+            embedding_json=excluded.embedding_json,
+            model_name=excluded.model_name,
+            created_at=excluded.created_at
+        """,
+        (message_id, dumps_embedding(vec), model_name, utc_now_iso()),
+    )
+    con.commit()
+
+
+def add_tag(con: sqlite3.Connection, message_id: int, tag: str) -> None:
+    cur = con.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO message_tags(message_id, tag, created_at) VALUES (?, ?, ?)",
+        (int(message_id), tag.strip(), utc_now_iso()),
+    )
+    con.commit()
+
+
+def search_by_tag(con: sqlite3.Connection, tag: str, limit: int = 50) -> List[Tuple[int, int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT m.id, m.conversation_id, COALESCE(c.title,''), m.role, substr(m.content, 1, 200)
+        FROM message_tags t
+        JOIN messages m ON m.id = t.message_id
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE lower(t.tag) = lower(?)
+        ORDER BY m.id DESC
+        LIMIT ?
+        """,
+        (tag.strip(), max(1, limit)),
+    )
+    return cur.fetchall()
+
+
+def list_titles(con: sqlite3.Connection) -> List[Tuple[int, str]]:
+    cur = con.cursor()
+    cur.execute("SELECT id, COALESCE(title, '') FROM conversations ORDER BY id ASC")
+    return cur.fetchall()
+
+
+def semantic_search_messages(con: sqlite3.Connection, query: str, limit: int = 10) -> List[Tuple[float, int, int, str, str, str]]:
+    qv = embed_text(query)
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT m.id, m.conversation_id, COALESCE(c.title,''), m.role, substr(m.content,1,200), e.embedding_json
+        FROM message_embeddings e
+        JOIN messages m ON m.id = e.message_id
+        JOIN conversations c ON c.id = m.conversation_id
+        """
+    )
+    rows = cur.fetchall()
+    ranked = rank_by_similarity(qv, rows, limit=limit)
+    return ranked
+
+
+def get_archive_stats(con: sqlite3.Connection) -> Dict[str, Any]:
+    cur = con.cursor()
+    cur.execute("SELECT COUNT(*) FROM messages")
+    total_messages = int(cur.fetchone()[0])
+    cur.execute("SELECT COUNT(*) FROM conversations")
+    total_conversations = int(cur.fetchone()[0])
+    cur.execute("SELECT MIN(created_at), MAX(created_at) FROM messages")
+    min_date, max_date = cur.fetchone()
+    cur.execute(
+        """
+        SELECT AVG(cnt), MIN(cnt), MAX(cnt)
+        FROM (
+            SELECT COUNT(*) AS cnt FROM messages GROUP BY conversation_id
+        )
+        """
+    )
+    mean_cnt, min_cnt, max_cnt = cur.fetchone()
+    return {
+        "total_messages": total_messages,
+        "total_conversations": total_conversations,
+        "date_range": (min_date, max_date),
+        "messages_per_conversation": {
+            "mean": float(mean_cnt) if mean_cnt is not None else 0.0,
+            "min": int(min_cnt) if min_cnt is not None else 0,
+            "max": int(max_cnt) if max_cnt is not None else 0,
+        },
+    }
 
 
 def get_messages(
@@ -596,3 +740,56 @@ def delete_conversation(con: sqlite3.Connection, conversation_id: int) -> None:
     except sqlite3.OperationalError:
         con.rollback()
         raise
+
+
+
+def get_conversation_messages(con: sqlite3.Connection, conversation_id: int) -> List[Tuple[int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, role, content, created_at
+        FROM messages
+        WHERE conversation_id=?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (int(conversation_id),),
+    )
+    return cur.fetchall()
+
+
+def get_messages_in_range(con: sqlite3.Connection, start_iso: str, end_iso: str) -> List[Tuple[int, int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, conversation_id, role, content, created_at
+        FROM messages
+        WHERE created_at >= ? AND created_at <= ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (start_iso, end_iso),
+    )
+    return cur.fetchall()
+
+
+def get_all_messages(con: sqlite3.Connection) -> List[Tuple[int, int, str, str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, conversation_id, role, content, created_at
+        FROM messages
+        ORDER BY created_at ASC, id ASC
+        """
+    )
+    return cur.fetchall()
+
+
+def list_conversations(con: sqlite3.Connection) -> List[Tuple[int, str, Optional[str], Optional[str], str]]:
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT id, COALESCE(title,''), created_at, updated_at, COALESCE(provider, 'chatgpt')
+        FROM conversations
+        ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+        """
+    )
+    return cur.fetchall()

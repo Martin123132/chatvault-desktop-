@@ -86,6 +86,7 @@ def _process_conversation(con, conv: Dict[str, Any]) -> Tuple[int, int]:
         title=title[:200],
         created_at=_iso_from_ts(create_ts),
         updated_at=_iso_from_ts(update_ts),
+        provider="chatgpt",
     )
 
     mapping = conv.get("mapping") or {}
@@ -112,6 +113,7 @@ def _process_conversation(con, conv: Dict[str, Any]) -> Tuple[int, int]:
                 external_node_id=node_id,
                 parent_external_node_id=node.get("parent"),
                 meta={"export": True},
+                create_embedding=True,
             )
             message_count += 1
     return message_count, 1
