@@ -27,8 +27,18 @@ def _strip_role_prefix(text: str) -> str:
     return re.sub(r"^\s*(You|User|ChatGPT|Assistant)\s*[:\-]\s*", "", text, flags=re.I)
 
 
+def _derive_title(conv: Dict) -> str:
+    for message in conv.get("messages", []):
+        if message.get("role") == "user":
+            text = (message.get("content") or "").strip()
+            if text:
+                words = text.split()
+                short = " ".join(words[:10])
+                return (short + "…")[:200] if len(words) > 10 else short[:200]
+    return (conv.get("title") or "Imported chat (HTML)")[:200]
+
+
 def _process_heading(el, current_conv: Optional[Dict], conversations: List[Dict]) -> Optional[Dict]:
-    """Processes a heading element, potentially starting a new conversation."""
     title = el.get_text(" ", strip=True)
     if not title:
         return current_conv
@@ -39,7 +49,6 @@ def _process_heading(el, current_conv: Optional[Dict], conversations: List[Dict]
 
 
 def _process_message_element(el, current_conv: Optional[Dict]) -> Optional[Dict]:
-    """Processes a message element, adding a message to the current conversation."""
     if not hasattr(el, "name") or el.name not in ("p", "div", "li"):
         return current_conv
 
@@ -67,7 +76,7 @@ def _parse_conversations_from_html(soup: BeautifulSoup) -> List[Dict]:
     conversations: List[Dict] = []
     current_conv: Optional[Dict] = None
 
-    for el in body.find_all(True):  # Iterate over Tag objects only
+    for el in body.find_all(True):
         if isinstance(el, Tag) and el.name in ("h1", "h2", "h3"):
             current_conv = _process_heading(el, current_conv, conversations)
         else:
@@ -87,9 +96,10 @@ def _save_conversations_to_db(con, conversations: List[Dict]) -> dict:
         conv_id = create_conversation(
             con=con,
             source="chatgpt_html",
-            title=conv["title"],
+            title=_derive_title(conv),
             external_id=None,
-            created_at=datetime.now(timezone.utc).isoformat()
+            created_at=datetime.now(timezone.utc).isoformat(),
+            provider="chatgpt",
         )
         conv_count += 1
 
@@ -99,7 +109,8 @@ def _save_conversations_to_db(con, conversations: List[Dict]) -> dict:
                 conversation_id=conv_id,
                 source="chatgpt_html",
                 role=m["role"],
-                content=m["content"]
+                content=m["content"],
+                create_embedding=True,
             )
             msg_count += 1
 
