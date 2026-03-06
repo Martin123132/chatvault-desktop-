@@ -24,14 +24,12 @@ from src.chatvault_db import (
     search_messages,
     semantic_search_messages,
 )
-from src.council import run_council
 from src.importer_chatgpt_html import import_chat_html
 from src.importer_claude import import_claude_export
 from src.insights import recommend_from_archive, summarize_range
 from src.replay import replay_conversation
-from src.importer_chatgpt_html import import_chat_html
-from src.importer_claude import import_claude_export
 from src.stats import collect_stats
+from src.paths import resolve_db_path
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
@@ -205,6 +203,8 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 
 def _cmd_council(args: argparse.Namespace) -> int:
+    from src.council import run_council
+
     con = connect(args.db)
     try:
         result = run_council(con, args.question)
@@ -269,7 +269,7 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("chatvault")
-    parser.add_argument("--db", default=os.getenv("CHATVAULT_DB", "chatvault.sqlite3"), help="SQLite database path")
+    parser.add_argument("--db", default=resolve_db_path(), help="SQLite database path")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_import = sub.add_parser("import", help="Import ChatGPT chat.html")

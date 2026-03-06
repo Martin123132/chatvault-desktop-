@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
+import sys
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -11,8 +11,10 @@ from pydantic import BaseModel
 
 try:
     from .chatvault_db import add_tag, connect, get_messages, search_messages
+    from .paths import resolve_db_path
 except Exception:  # pragma: no cover
     from chatvault_db import add_tag, connect, get_messages, search_messages
+    from paths import resolve_db_path
 
 
 class TagPayload(BaseModel):
@@ -20,6 +22,9 @@ class TagPayload(BaseModel):
 
 
 def _root_dir() -> Path:
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        return Path(frozen_root)
     return Path(__file__).resolve().parent.parent
 
 
@@ -32,7 +37,7 @@ def _snippet(text: str, max_len: int = 220) -> str:
 
 def make_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="ChatVault Dashboard")
-    con = connect(db_path or os.getenv("CHATVAULT_DB", "chatvault.sqlite3"))
+    con = connect(resolve_db_path(db_path))
 
     root = _root_dir()
     templates_dir = root / "templates"
@@ -45,6 +50,10 @@ def make_app(db_path: str | None = None) -> FastAPI:
     def index() -> HTMLResponse:
         html = (templates_dir / "index.html").read_text(encoding="utf-8")
         return HTMLResponse(html)
+
+    @app.get("/healthz")
+    def healthz() -> dict[str, bool]:
+        return {"ok": True}
 
     @app.get("/api/search")
     def api_search(q: str, limit: int = 25) -> list[dict[str, Any]]:

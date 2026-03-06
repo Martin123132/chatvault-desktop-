@@ -31,6 +31,47 @@ Optional fields in .env:
 	•	OLLAMA_HOST, OLLAMA_MODEL
 	•	CHATVAULT_EMBEDDINGS_MODEL (local sentence-transformers)
 
+
+🖥️ Windows Desktop App (Installer)
+
+ChatVault can be shipped as a non-technical Windows desktop app using:
+- **PyInstaller** (bundled Python runtime, EXE builds)
+- **Inno Setup** (one-click installer, Start Menu + Desktop shortcuts)
+
+### What users get
+- One-click `ChatVaultSetup.exe` installer
+- Start Menu shortcut (`ChatVault`)
+- Optional Desktop shortcut (`ChatVault`)
+- App launches without terminal usage
+- CLI still included (`chatvault-cli.exe`) for advanced users
+
+### Build the Windows installer
+On a Windows machine with Python 3.10+ and Inno Setup 6 installed:
+
+```powershell
+# from repo root
+./scripts/build_windows.ps1
+```
+
+Artifacts:
+- `dist/ChatVault.exe` (desktop launcher, no console)
+- `dist/chatvault-cli.exe` (CLI, console)
+- `dist/installer/ChatVaultSetup.exe` (installer)
+
+If you only want EXEs (no installer):
+
+```powershell
+./scripts/build_windows.ps1 -SkipInstaller
+```
+
+### Data location
+By default ChatVault now stores SQLite data in a per-user app data folder:
+- Windows: `%LOCALAPPDATA%\ChatVault\chatvault.sqlite3`
+- Linux/macOS: `~/.local/share/chatvault/chatvault.sqlite3`
+
+You can still override with `--db` or `CHATVAULT_DB`.
+
+
 ⸻
 
 📦 Core Commands
