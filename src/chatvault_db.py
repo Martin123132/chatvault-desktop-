@@ -8,7 +8,6 @@ try:
     from .semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
 except Exception:  # pragma: no cover
     from semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
-from semantic_search import DEFAULT_EMBED_MODEL, embed_text, rank_by_similarity, dumps_embedding
 
 
 def utc_now_iso() -> str:
