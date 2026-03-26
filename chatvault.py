@@ -26,6 +26,7 @@ from src.chatvault_db import (
 )
 from src.importer_chatgpt_html import import_chat_html
 from src.importer_claude import import_claude_export
+from src.importer_documents import import_documents
 from src.insights import recommend_from_archive, summarize_range
 from src.replay import replay_conversation
 from src.stats import collect_stats
@@ -45,6 +46,25 @@ def _cmd_import_claude(args: argparse.Namespace) -> int:
     print("Claude import complete:", stats)
     return 0
 
+
+
+def _cmd_import_docs(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    try:
+        stats = import_documents(
+            con,
+            source_path=args.path,
+            recursive=not args.no_recursive,
+            chunk_size_words=args.chunk_size,
+            chunk_overlap_words=args.chunk_overlap,
+            embed=not args.no_embeddings,
+        )
+    except Exception as exc:
+        print(f"Document import failed: {exc}")
+        return 1
+
+    print("Document import complete:", stats)
+    return 0
 
 def _cmd_search(args: argparse.Namespace) -> int:
     con = connect(args.db)
@@ -279,6 +299,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_import_claude = sub.add_parser("import-claude", help="Import Claude export JSON")
     p_import_claude.add_argument("--export", required=True, help="Path to Claude export JSON")
     p_import_claude.set_defaults(func=_cmd_import_claude)
+
+    p_import_docs = sub.add_parser("import-docs", help="Import local PDFs/Markdown/text as searchable chunks")
+    p_import_docs.add_argument("--path", required=True, help="File or folder to ingest")
+    p_import_docs.add_argument("--no-recursive", action="store_true", help="Do not recurse into subfolders")
+    p_import_docs.add_argument("--chunk-size", type=int, default=260, help="Chunk size in words")
+    p_import_docs.add_argument("--chunk-overlap", type=int, default=40, help="Chunk overlap in words")
+    p_import_docs.add_argument("--no-embeddings", action="store_true", help="Skip semantic embedding generation")
+    p_import_docs.set_defaults(func=_cmd_import_docs)
 
     p_search = sub.add_parser("search", help="Search archived messages")
     p_search.add_argument("query", help="FTS query")

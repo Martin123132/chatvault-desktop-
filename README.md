@@ -86,6 +86,11 @@ Import Claude
 
 python chatvault.py import-claude --export exports/claude.json
 
+Import local research docs (PDF/Markdown/text)
+
+python chatvault.py import-docs --path ~/papers
+python chatvault.py import-docs --path ./notes.md --chunk-size 180 --chunk-overlap 30
+
 Keyword search (FTS)
 
 python chatvault.py search "transformer AND memory"
@@ -140,6 +145,30 @@ Ask the same question to multiple backends (OpenAI, Anthropic, Ollama) and store
 python chatvault.py council --question "How do we design a CPU?"
 
 All council messages are saved in a dedicated conversation.
+
+⸻
+
+
+📚 Research Library Upgrades
+
+You can now ingest local files into the same searchable semantic memory:
+
+	•	PDFs (`.pdf`)
+	•	Markdown (`.md`)
+	•	Plain text (`.txt`)
+
+Each file is chunked, stored as a local conversation, and can be queried with both keyword and semantic search.
+
+```bash
+python chatvault.py import-docs --path ~/research
+python chatvault.py search "find papers discussing retrieval augmented generation" --semantic
+```
+
+Useful flags:
+
+- `--no-recursive` to only ingest the top folder
+- `--chunk-size` / `--chunk-overlap` to tune chunking
+- `--no-embeddings` for fast ingestion without semantic vectors
 
 ⸻
 
