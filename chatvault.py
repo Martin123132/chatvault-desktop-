@@ -27,6 +27,7 @@ from src.chatvault_db import (
 from src.importer_chatgpt_html import import_chat_html
 from src.importer_claude import import_claude_export
 from src.importer_documents import import_documents
+from src.importer_chatgpt_shared import ImportSharedChatOptions, import_chatgpt_shared_url
 from src.insights import recommend_from_archive, summarize_range
 from src.replay import replay_conversation
 from src.stats import collect_stats
@@ -47,6 +48,30 @@ def _cmd_import_claude(args: argparse.Namespace) -> int:
     return 0
 
 
+
+
+
+def _cmd_import_shared_chat(args: argparse.Namespace) -> int:
+    con = connect(args.db)
+    if args.browser:
+        print("Browser fallback is not implemented in this build. Retrying with HTML parser only.")
+    opts = ImportSharedChatOptions(
+        title_override=args.title,
+        save_raw_html=bool(args.save_raw_html),
+        raw_html_dir=args.raw_html_dir,
+        create_embeddings=not args.no_embeddings,
+        request_timeout_s=float(args.timeout),
+        dry_run=bool(args.dry_run),
+    )
+
+    try:
+        result = import_chatgpt_shared_url(con, args.url, options=opts)
+    except Exception as exc:
+        print(f"Shared chat import failed: {exc}")
+        return 1
+
+    print("Shared chat import complete:", result)
+    return 0
 
 def _cmd_import_docs(args: argparse.Namespace) -> int:
     con = connect(args.db)
@@ -307,6 +332,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_import_docs.add_argument("--chunk-overlap", type=int, default=40, help="Chunk overlap in words")
     p_import_docs.add_argument("--no-embeddings", action="store_true", help="Skip semantic embedding generation")
     p_import_docs.set_defaults(func=_cmd_import_docs)
+
+    p_import_shared = sub.add_parser("import-shared-chat", help="Import one ChatGPT shared chat URL")
+    p_import_shared.add_argument("url", help="Public ChatGPT share URL")
+    p_import_shared.add_argument("--title", default=None, help="Override imported title")
+    p_import_shared.add_argument("--save-raw-html", action="store_true", help="Save fetched HTML snapshot")
+    p_import_shared.add_argument("--raw-html-dir", default=None, help="Directory for HTML snapshots")
+    p_import_shared.add_argument("--browser", action="store_true", help="Use browser fallback when parsing fails (not yet implemented)")
+    p_import_shared.add_argument("--no-embeddings", action="store_true", help="Skip semantic embedding generation")
+    p_import_shared.add_argument("--timeout", type=float, default=20.0, help="Network timeout in seconds")
+    p_import_shared.add_argument("--dry-run", action="store_true", help="Validate and parse without saving to the database")
+    p_import_shared.set_defaults(func=_cmd_import_shared_chat)
 
     p_search = sub.add_parser("search", help="Search archived messages")
     p_search.add_argument("query", help="FTS query")

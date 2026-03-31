@@ -11,14 +11,26 @@ from pydantic import BaseModel
 
 try:
     from .chatvault_db import add_tag, connect, get_messages, search_messages
+    from .importer_chatgpt_shared import ImportSharedChatOptions, import_chatgpt_shared_url
     from .paths import resolve_db_path
 except Exception:  # pragma: no cover
     from chatvault_db import add_tag, connect, get_messages, search_messages
+    from importer_chatgpt_shared import ImportSharedChatOptions, import_chatgpt_shared_url
     from paths import resolve_db_path
 
 
 class TagPayload(BaseModel):
     tag: str
+
+
+class ImportSharedPayload(BaseModel):
+    url: str
+    title: str | None = None
+    save_raw_html: bool = False
+    raw_html_dir: str | None = None
+    no_embeddings: bool = False
+    timeout: float = 20.0
+    dry_run: bool = False
 
 
 def _root_dir() -> Path:
@@ -139,6 +151,22 @@ def make_app(db_path: str | None = None) -> FastAPI:
                 }
             )
         return {"conversation_id": conversation_id, "message_id": int(message_id), "items": items}
+
+    @app.post("/api/import/shared-chat")
+    def api_import_shared_chat(payload: ImportSharedPayload) -> dict[str, Any]:
+        options = ImportSharedChatOptions(
+            title_override=payload.title,
+            save_raw_html=bool(payload.save_raw_html),
+            raw_html_dir=payload.raw_html_dir,
+            create_embeddings=not payload.no_embeddings,
+            request_timeout_s=float(payload.timeout),
+            dry_run=bool(payload.dry_run),
+        )
+        try:
+            result = import_chatgpt_shared_url(con, payload.url, options=options)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return result
 
     @app.get("/api/messages/{message_id}/tags")
     def api_list_tags(message_id: int) -> dict[str, Any]:
