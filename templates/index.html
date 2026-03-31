@@ -38,6 +38,19 @@
       <div class="muted" style="margin-top:6px;">Use search to populate results. Click a result to open the full conversation.</div>
     </div>
 
+    <div class="card" style="margin-bottom:14px;">
+      <h3>Import ChatGPT Shared Chat</h3>
+      <div class="search-row">
+        <input id="sharedUrl" style="flex:1" placeholder="https://chatgpt.com/share/..." />
+        <button id="importSharedBtn">Import</button>
+      </div>
+      <div class="search-row" style="margin-top:8px;">
+        <input id="sharedTitle" style="flex:1" placeholder="Optional title override" />
+        <label class="muted" style="display:flex;align-items:center;gap:6px;"><input id="sharedSaveHtml" type="checkbox" /> save raw HTML</label>
+      </div>
+      <div id="sharedImportOut" class="muted" style="margin-top:8px;">No shared chat imported yet.</div>
+    </div>
+
     <div class="grid">
       <div class="card">
         <h2>Results</h2>
@@ -81,6 +94,11 @@
 <script>
 const els = {
   q: document.getElementById('q'),
+  sharedUrl: document.getElementById('sharedUrl'),
+  sharedTitle: document.getElementById('sharedTitle'),
+  sharedSaveHtml: document.getElementById('sharedSaveHtml'),
+  importSharedBtn: document.getElementById('importSharedBtn'),
+  sharedImportOut: document.getElementById('sharedImportOut'),
   searchBtn: document.getElementById('searchBtn'),
   results: document.getElementById('results'),
   convTitle: document.getElementById('convTitle'),
@@ -188,11 +206,35 @@ async function loadTags() {
   els.tagOut.innerHTML = data.tags.length ? data.tags.map(t => `<span class="pill">${t}</span>`).join(' ') : '<span class="muted">No tags</span>';
 }
 
+async function importSharedChat() {
+  const url = els.sharedUrl.value.trim();
+  if (!url) return;
+  const payload = {
+    url,
+    title: els.sharedTitle.value.trim() || null,
+    save_raw_html: Boolean(els.sharedSaveHtml.checked),
+  };
+  try {
+    const data = await jpost('/api/import/shared-chat', payload);
+    if (data.duplicate) {
+      els.sharedImportOut.innerHTML = `Already imported as conversation <strong>#${data.conversation_id}</strong>.`;
+      await loadConversation(data.conversation_id);
+      return;
+    }
+    els.sharedImportOut.innerHTML = `Imported conversation <strong>#${data.conversation_id}</strong> with ${data.messages} messages.`;
+    await loadConversation(data.conversation_id);
+  } catch (err) {
+    els.sharedImportOut.textContent = `Import failed: ${err.message}`;
+  }
+}
+
 els.searchBtn.addEventListener('click', search);
 els.q.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
 els.loadContextBtn.addEventListener('click', loadContext);
 els.addTagBtn.addEventListener('click', addTag);
 els.loadTagsBtn.addEventListener('click', loadTags);
+els.importSharedBtn.addEventListener('click', importSharedChat);
+els.sharedUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') importSharedChat(); });
 </script>
 </body>
 </html>
