@@ -262,3 +262,34 @@ See the included file for full text.
 
 ⸻
 
+
+---
+
+## ChatVault Capture browser extension
+
+ChatVault Capture is a local-only Manifest V3 browser extension in `browser_extension/` that captures visible conversations from `chatgpt.com` and saves them directly into your local ChatVault database through the FastAPI endpoint:
+
+- `POST http://127.0.0.1:8000/api/browser-capture`
+
+### What it supports
+- Save full visible thread from popup button.
+- Right-click: **Save selected text to ChatVault**.
+- Right-click: **Save nearest assistant message**.
+- Preserves message role (`user`/`assistant`).
+- Includes exported Markdown text in capture metadata.
+- Includes metadata: provider, page URL, conversation title, and capture timestamp.
+- Success/failure notifications in-browser.
+
+### Install (Chrome/Edge)
+1. Start ChatVault web server locally:
+   - `uvicorn src.app:app --host 127.0.0.1 --port 8000`
+2. Open extension management page:
+   - Chrome: `chrome://extensions`
+   - Edge: `edge://extensions`
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and choose `browser_extension/`.
+5. Open a ChatGPT conversation page (`https://chatgpt.com/...`).
+6. Use the popup **Save Thread** button or context menu actions.
+
+### Security note
+This extension is intentionally local-first: it only sends capture payloads to `http://127.0.0.1:8000/api/browser-capture` on your own machine. It does not call OpenAI, Anthropic, or any external capture servers.

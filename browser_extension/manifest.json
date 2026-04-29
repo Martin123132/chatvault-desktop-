@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "ChatVault Capture",
+  "version": "0.1.0",
+  "description": "Capture ChatGPT conversations to local ChatVault.",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ChatVault Capture"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "128": "icon.svg"
+  }
+}
