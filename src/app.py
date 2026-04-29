@@ -7,20 +7,41 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:
     from .chatvault_db import add_tag, connect, get_messages, search_messages
     from .importer_chatgpt_shared import ImportSharedChatOptions, import_chatgpt_shared_url
     from .paths import resolve_db_path
+    from .browser_capture import BrowserCapturePayload, BrowserCaptureMessage, import_browser_capture
 except Exception:  # pragma: no cover
     from chatvault_db import add_tag, connect, get_messages, search_messages
     from importer_chatgpt_shared import ImportSharedChatOptions, import_chatgpt_shared_url
     from paths import resolve_db_path
+    from browser_capture import BrowserCapturePayload, BrowserCaptureMessage, import_browser_capture
 
 
 class TagPayload(BaseModel):
     tag: str
+
+
+
+
+class BrowserCaptureMessagePayload(BaseModel):
+    role: str
+    content: str
+    created_at: str | None = None
+
+
+class BrowserCaptureRequest(BaseModel):
+    provider: str = "chatgpt"
+    page_url: str
+    conversation_title: str | None = None
+    captured_at: str
+    messages: list[BrowserCaptureMessagePayload] = Field(default_factory=list)
+    markdown: str | None = None
+    project: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class ImportSharedPayload(BaseModel):
@@ -151,6 +172,26 @@ def make_app(db_path: str | None = None) -> FastAPI:
                 }
             )
         return {"conversation_id": conversation_id, "message_id": int(message_id), "items": items}
+
+    @app.post("/api/browser-capture")
+    def api_browser_capture(payload: BrowserCaptureRequest) -> dict[str, Any]:
+        if not payload.messages:
+            raise HTTPException(status_code=400, detail="messages are required")
+
+        parsed = BrowserCapturePayload(
+            provider=payload.provider,
+            page_url=payload.page_url,
+            conversation_title=payload.conversation_title or "Captured Chat",
+            captured_at=payload.captured_at,
+            messages=[BrowserCaptureMessage(role=m.role, content=m.content, created_at=m.created_at) for m in payload.messages],
+            markdown=payload.markdown,
+            project=payload.project,
+            tags=payload.tags,
+        )
+        try:
+            return import_browser_capture(con, parsed)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.post("/api/import/shared-chat")
     def api_import_shared_chat(payload: ImportSharedPayload) -> dict[str, Any]:
