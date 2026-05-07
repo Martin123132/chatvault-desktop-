@@ -1,5 +1,7 @@
+<img width="1448" height="1086" alt="a447b52a-bd2a-44b1-9631-3459dd4d747c" src="https://github.com/user-attachments/assets/0f963a49-b261-442b-a645-bd6d72cef745" />
 
 ⭐ ChatVault
+<img width="1448" height="1086" alt="a48e06a9-265a-4a29-8021-10c7d4821a5c" src="https://github.com/user-attachments/assets/dbe5c862-e1ba-402a-b70e-dec0b7bb5b0d" />
 
 Your local, searchable AI conversation archive with multi-model intelligence.
 
@@ -37,6 +39,9 @@ Optional fields in .env:
 ChatVault can be shipped as a non-technical Windows desktop app using:
 - **PyInstaller** (bundled Python runtime, EXE builds)
 - **Inno Setup** (one-click installer, Start Menu + Desktop shortcuts)
+
+- <img width="1448" height="1086" alt="9d376bd5-36b4-42ae-9b17-5e888dda13f6" src="https://github.com/user-attachments/assets/18e0e8c8-64bb-4e93-909d-efaa2e6df800" />
+
 
 ### What users get
 - One-click `ChatVaultSetup.exe` installer
@@ -293,3 +298,6 @@ ChatVault Capture is a local-only Manifest V3 browser extension in `browser_exte
 
 ### Security note
 This extension is intentionally local-first: it only sends capture payloads to `http://127.0.0.1:8000/api/browser-capture` on your own machine. It does not call OpenAI, Anthropic, or any external capture servers.
+
+<img width="1672" height="941" alt="189c3014-a08f-4511-9ee5-e19933356f7a" src="https://github.com/user-attachments/assets/181caa70-6495-4caa-a090-73f9a7448d73" />
+
