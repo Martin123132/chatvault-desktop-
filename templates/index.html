@@ -3,238 +3,334 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ChatVault Dashboard</title>
-  <style>
-    :root { font-family: Inter, system-ui, Arial, sans-serif; }
-    body { margin: 0; background: #f7f7fb; color: #222; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
-    .card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
-    .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 14px; }
-    .search-row { display: flex; gap: 8px; }
-    input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #bbb; }
-    button { background: #2f6feb; color: #fff; border-color: #2f6feb; cursor: pointer; }
-    button.secondary { background: #fff; color: #333; border-color: #bbb; }
-    ul { list-style: none; padding: 0; margin: 10px 0 0; }
-    li { border: 1px solid #ececec; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-    .meta { color: #666; font-size: 12px; }
-    .msg { margin-top: 6px; white-space: pre-wrap; }
-    .row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
-    .pill { display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 999px; font-size: 12px; margin-right: 5px; }
-    .muted { color: #777; }
-    h1, h2, h3 { margin: 0 0 10px; }
-    .context-box { max-height: 280px; overflow: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px; background: #fafafa; }
-    .target { background: #fff4cb; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-  </style>
+  <title>ChatVault</title>
+  <link rel="stylesheet" href="/static/dashboard.css" />
 </head>
 <body>
-  <div class="wrap">
-    <h1>ChatVault Dashboard</h1>
-    <div class="card" style="margin-bottom:14px;">
-      <div class="search-row">
-        <input id="q" style="flex:1" placeholder="Search messages (FTS query)" />
-        <button id="searchBtn">Search</button>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">CV</div>
+        <strong>ChatVault</strong>
       </div>
-      <div class="muted" style="margin-top:6px;">Use search to populate results. Click a result to open the full conversation.</div>
-    </div>
+      <nav class="nav" aria-label="Primary">
+        <button class="active" data-view-target="home"><span class="nav-icon">H</span><span>Home</span></button>
+        <button data-view-target="conversations"><span class="nav-icon">C</span><span>Conversations</span></button>
+        <button data-view-target="search"><span class="nav-icon">S</span><span>Search</span></button>
+        <button data-view-target="imports"><span class="nav-icon">I</span><span>Imports</span></button>
+        <button data-view-target="chat"><span class="nav-icon">AI</span><span>Chat</span></button>
+        <button data-view-target="council"><span class="nav-icon">CM</span><span>Council Mode</span></button>
+        <button data-view-target="insights"><span class="nav-icon">A</span><span>Insights</span></button>
+        <button data-view-target="replay"><span class="nav-icon">R</span><span>Replay</span></button>
+        <button data-view-target="tags"><span class="nav-icon">T</span><span>Tags</span></button>
+        <button data-view-target="settings"><span class="nav-icon">K</span><span>Settings</span></button>
+      </nav>
 
-    <div class="card" style="margin-bottom:14px;">
-      <h3>Import ChatGPT Shared Chat</h3>
-      <div class="search-row">
-        <input id="sharedUrl" style="flex:1" placeholder="https://chatgpt.com/share/..." />
-        <button id="importSharedBtn">Import</button>
-      </div>
-      <div class="search-row" style="margin-top:8px;">
-        <input id="sharedTitle" style="flex:1" placeholder="Optional title override" />
-        <label class="muted" style="display:flex;align-items:center;gap:6px;"><input id="sharedSaveHtml" type="checkbox" /> save raw HTML</label>
-      </div>
-      <div id="sharedImportOut" class="muted" style="margin-top:8px;">No shared chat imported yet.</div>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h2>Results</h2>
-        <ul id="results"></ul>
+      <div class="status-card">
+        <h3>System Status</h3>
+        <div class="status-row"><span id="statusBackend">Backend</span><span class="dot" id="backendDot"></span></div>
+        <div class="status-row"><span id="statusOpenAI">OpenAI key</span><span class="dot warn" id="openaiDot"></span></div>
+        <div class="status-row"><span id="statusAnthropic">Anthropic key</span><span class="dot warn" id="anthropicDot"></span></div>
+        <div class="status-row"><span>Local database</span><span class="dot"></span></div>
       </div>
 
-      <div class="card">
-        <h2 id="convTitle">Conversation Viewer</h2>
-        <div id="convMeta" class="meta"></div>
-        <ul id="messages"></ul>
+      <div class="status-card">
+        <h3>Storage</h3>
+        <div class="status-row"><span>Messages</span><strong id="sideMessages">0</strong></div>
+        <div class="status-row"><span>Conversations</span><strong id="sideConversations">0</strong></div>
+        <div class="status-row"><span>Documents</span><strong id="sideDocuments">0</strong></div>
       </div>
-    </div>
+    </aside>
 
-    <div class="grid" style="margin-top:14px;">
-      <div class="card">
-        <h3>Context Viewer</h3>
-        <div class="search-row" style="margin-bottom:8px;">
-          <input id="contextMessageId" placeholder="Message ID" />
-          <input id="contextWindow" placeholder="Window" value="6" />
-          <button id="loadContextBtn" class="secondary">Load context</button>
+    <main class="main">
+      <header class="topbar">
+        <div class="searchbar">
+          <input id="globalSearch" placeholder="Search conversations, documents, tags, notes..." />
+          <label class="check-row"><input id="globalSemantic" type="checkbox" /> Semantic</label>
+          <button id="globalSearchBtn" class="primary">Search</button>
         </div>
-        <div id="context" class="context-box muted">No context loaded.</div>
-      </div>
+        <div class="top-actions">
+          <button id="newChatTop" class="primary">New Chat</button>
+          <button data-view-target="imports">Import</button>
+          <button data-view-target="settings" class="ghost">Settings</button>
+        </div>
+      </header>
 
-      <div class="card">
-        <h3>Tags</h3>
-        <div class="search-row" style="margin-bottom:8px;">
-          <input id="tagMessageId" placeholder="Message ID" />
-          <input id="tagName" placeholder="Tag name" />
-          <button id="addTagBtn" class="secondary">Add tag</button>
+      <section class="content">
+        <div class="workbench">
+          <section id="view-home" class="view active">
+            <div class="hero">
+              <div class="hero-inner">
+                <h1>Your Local AI Memory System</h1>
+                <p>Search, organize, replay, and reason over your conversations and research from one local dashboard.</p>
+                <div class="hero-actions">
+                  <button class="primary" data-view-target="imports"><span class="nav-icon">I</span><span>Import Conversations<small>ChatGPT, Claude, docs</small></span></button>
+                  <button data-view-target="search"><span class="nav-icon">S</span><span>Semantic Search<small>Find meaning across memory</small></span></button>
+                  <button data-view-target="council"><span class="nav-icon">CM</span><span>Start Council Session<small>Multi-backend reasoning</small></span></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="feature-grid">
+              <div class="feature-card" data-view-target="imports"><strong>Import Library</strong><span>ChatGPT, Claude, shared chats, and local files.</span></div>
+              <div class="feature-card" data-view-target="search"><strong>Semantic Search</strong><span>Keyword or embedding-backed lookup.</span></div>
+              <div class="feature-card" data-view-target="chat"><strong>AI Chat</strong><span>Ask a configured backend from the UI.</span></div>
+              <div class="feature-card" data-view-target="council"><strong>Council Mode</strong><span>Compare OpenAI, Anthropic, and Ollama.</span></div>
+              <div class="feature-card" data-view-target="replay"><strong>Timeline Replay</strong><span>Play conversations back in order.</span></div>
+              <div class="feature-card" data-view-target="tags"><strong>Tags</strong><span>Create and search message tags.</span></div>
+              <div class="feature-card" data-view-target="insights"><strong>Analytics</strong><span>Summaries, themes, and follow-ups.</span></div>
+              <div class="feature-card" data-view-target="settings"><strong>Settings</strong><span>Keys, models, offline mode, Ollama.</span></div>
+            </div>
+
+            <div class="metric-grid">
+              <div class="metric"><span>Conversations</span><strong id="metricConversations">0</strong></div>
+              <div class="metric"><span>Messages</span><strong id="metricMessages">0</strong></div>
+              <div class="metric"><span>Tags</span><strong id="metricTags">0</strong></div>
+              <div class="metric"><span>Documents</span><strong id="metricDocuments">0</strong></div>
+            </div>
+
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Conversation Preview</h2><button data-view-target="conversations" class="ghost">View all</button></div>
+                <div class="panel-body"><div id="homeConversations" class="list"></div></div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2>Search Preview</h2><button data-view-target="search" class="ghost">Open search</button></div>
+                <div class="panel-body"><div id="homeSearchPreview" class="output muted">Run a search to preview results here.</div></div>
+              </article>
+            </div>
+          </section>
+
+          <section id="view-conversations" class="view">
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Conversations</h2><button id="refreshConversations" class="ghost">Refresh</button></div>
+                <div class="panel-body"><div id="conversationList" class="list"></div></div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2 id="conversationTitle">Conversation Viewer</h2><span id="conversationMeta" class="muted mini"></span></div>
+                <div class="panel-body"><div id="conversationMessages" class="conversation-view muted">Select a conversation.</div></div>
+              </article>
+            </div>
+          </section>
+
+          <section id="view-search" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Search</h2><span class="muted mini">Keyword and semantic modes</span></div>
+              <div class="panel-body">
+                <div class="form-grid three">
+                  <input id="searchQuery" placeholder="Search query" />
+                  <select id="searchMode"><option value="keyword">Keyword</option><option value="semantic">Semantic</option></select>
+                  <button id="searchBtn" class="primary">Search</button>
+                </div>
+                <div id="searchResults" class="list" style="margin-top:12px;"></div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-imports" class="view">
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Upload Import</h2></div>
+                <div class="panel-body">
+                  <div class="form-grid">
+                    <div class="field"><label>Import type</label><select id="uploadSource"><option value="chatgpt">ChatGPT JSON</option><option value="chatgpt_html">ChatGPT HTML</option><option value="claude">Claude JSON</option><option value="documents">Research document</option></select></div>
+                    <div class="field"><label>File</label><input id="uploadFile" type="file" /></div>
+                    <div class="field"><label>Chunk size</label><input id="uploadChunkSize" type="number" min="40" value="260" /></div>
+                    <div class="field"><label>Chunk overlap</label><input id="uploadChunkOverlap" type="number" min="0" value="40" /></div>
+                  </div>
+                  <div class="action-row" style="margin-top:12px;">
+                    <label class="check-row"><input id="uploadNoEmbeddings" type="checkbox" /> Skip embeddings</label>
+                    <button id="uploadImportBtn" class="primary">Import Upload</button>
+                  </div>
+                  <div id="uploadImportOut" class="output muted" style="margin-top:12px;">No upload imported yet.</div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header"><h2>Path Import</h2></div>
+                <div class="panel-body">
+                  <div class="form-grid">
+                    <div class="field"><label>Import type</label><select id="pathSource"><option value="documents">Research documents</option><option value="chatgpt">ChatGPT JSON</option><option value="chatgpt_html">ChatGPT HTML</option><option value="claude">Claude JSON</option></select></div>
+                    <div class="field"><label>Local file or folder path</label><input id="pathImportValue" placeholder="C:\Users\you\Documents\research" /></div>
+                  </div>
+                  <div class="action-row" style="margin-top:12px;">
+                    <label class="check-row"><input id="pathRecursive" type="checkbox" checked /> Recursive</label>
+                    <label class="check-row"><input id="pathNoEmbeddings" type="checkbox" /> Skip embeddings</label>
+                    <button id="pathImportBtn" class="primary">Import Path</button>
+                  </div>
+                  <div id="pathImportOut" class="output muted" style="margin-top:12px;">No path imported yet.</div>
+                </div>
+              </article>
+            </div>
+
+            <article class="panel">
+              <div class="panel-header"><h2>Import ChatGPT Shared Chat</h2></div>
+              <div class="panel-body">
+                <div class="form-grid">
+                  <input id="sharedUrl" placeholder="https://chatgpt.com/share/..." />
+                  <input id="sharedTitle" placeholder="Optional title override" />
+                </div>
+                <div class="action-row" style="margin-top:12px;">
+                  <label class="check-row"><input id="sharedSaveHtml" type="checkbox" /> Save raw HTML</label>
+                  <label class="check-row"><input id="sharedNoEmbeddings" type="checkbox" /> Skip embeddings</label>
+                  <button id="importSharedBtn" class="primary">Import Shared Chat</button>
+                </div>
+                <div id="sharedImportOut" class="output muted" style="margin-top:12px;">No shared chat imported yet.</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-chat" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>AI Chat</h2><button id="newChatBtn" class="primary">New Chat</button></div>
+              <div class="panel-body">
+                <div class="form-grid three">
+                  <input id="chatTitle" placeholder="Conversation title" value="New chat" />
+                  <select id="chatBackend"><option value="">Default backend</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option></select>
+                  <input id="chatModel" placeholder="Optional model override" />
+                </div>
+                <div id="chatLog" class="chat-log output muted" style="margin-top:12px;">Create a chat or select an API-backed conversation.</div>
+                <div class="chat-compose">
+                  <textarea id="chatMessage" placeholder="Message ChatVault..."></textarea>
+                  <button id="sendChatBtn" class="primary">Send</button>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-council" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Council Mode</h2><span class="muted mini">OpenAI, Anthropic, Ollama, synthesis</span></div>
+              <div class="panel-body">
+                <textarea id="councilQuestion" placeholder="Question for the council"></textarea>
+                <div class="action-row" style="margin-top:12px;"><button id="runCouncilBtn" class="primary">Run Council</button></div>
+                <div id="councilOut" class="output muted" style="margin-top:12px;">No council session yet.</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-insights" class="view">
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Summarize</h2></div>
+                <div class="panel-body">
+                  <div class="form-grid three">
+                    <select id="summaryRange"><option value="last_7_days">Last 7 days</option><option value="last_30_days" selected>Last 30 days</option><option value="last_90_days">Last 90 days</option></select>
+                    <label class="check-row"><input id="summaryUseLlm" type="checkbox" /> Use LLM</label>
+                    <button id="summaryBtn" class="primary">Summarize</button>
+                  </div>
+                  <div id="summaryOut" class="output muted" style="margin-top:12px;">No summary generated yet.</div>
+                </div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2>Recommendations</h2></div>
+                <div class="panel-body">
+                  <div class="action-row">
+                    <label class="check-row"><input id="recommendUseLlm" type="checkbox" /> Use LLM</label>
+                    <button id="recommendBtn" class="primary">Recommend</button>
+                  </div>
+                  <div id="recommendOut" class="output muted" style="margin-top:12px;">No recommendations generated yet.</div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="view-replay" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Timeline Replay</h2></div>
+              <div class="panel-body">
+                <div class="form-grid three">
+                  <input id="replayConversationId" placeholder="Conversation ID" />
+                  <select id="replaySpeed"><option value="1">1x</option><option value="2">2x</option><option value="4">4x</option><option value="10">10x</option></select>
+                  <button id="loadReplayBtn" class="primary">Load Replay</button>
+                </div>
+                <div class="action-row" style="margin-top:12px;"><button id="playReplayBtn">Play</button><button id="stopReplayBtn" class="ghost">Stop</button></div>
+                <div id="replayOut" class="conversation-view output muted" style="margin-top:12px;">No replay loaded.</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-tags" class="view">
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Add Tag</h2></div>
+                <div class="panel-body">
+                  <div class="form-grid three">
+                    <input id="tagMessageId" placeholder="Message ID" />
+                    <input id="tagName" placeholder="Tag name" />
+                    <button id="addTagBtn" class="primary">Add Tag</button>
+                  </div>
+                  <div id="tagOut" class="output muted" style="margin-top:12px;">No tags loaded.</div>
+                </div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2>Search Tags</h2></div>
+                <div class="panel-body">
+                  <div class="form-grid">
+                    <input id="tagSearchName" placeholder="Tag name" />
+                    <button id="searchTagBtn" class="primary">Search Tag</button>
+                  </div>
+                  <div id="tagSearchOut" class="list" style="margin-top:12px;"></div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="view-settings" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Settings</h2><span id="settingsPath" class="muted mini"></span></div>
+              <div class="panel-body">
+                <div class="form-grid three">
+                  <div class="field"><label>Default backend</label><select id="settingsBackend"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option></select></div>
+                  <label class="check-row"><input id="settingsOffline" type="checkbox" /> Offline mode</label>
+                  <div class="field"><label>Embeddings model</label><input id="settingsEmbeddingsModel" /></div>
+                </div>
+                <div class="panel-grid three" style="margin-top:12px;">
+                  <div class="field"><label id="openaiKeyLabel">OpenAI API key</label><input id="settingsOpenAIKey" type="password" placeholder="Leave blank to keep saved key" /></div>
+                  <div class="field"><label>OpenAI model</label><input id="settingsOpenAIModel" /></div>
+                  <label class="check-row"><input id="settingsClearOpenAI" type="checkbox" /> Clear OpenAI key</label>
+                  <div class="field"><label id="anthropicKeyLabel">Anthropic API key</label><input id="settingsAnthropicKey" type="password" placeholder="Leave blank to keep saved key" /></div>
+                  <div class="field"><label>Anthropic model</label><input id="settingsAnthropicModel" /></div>
+                  <label class="check-row"><input id="settingsClearAnthropic" type="checkbox" /> Clear Anthropic key</label>
+                  <div class="field"><label>Ollama host</label><input id="settingsOllamaHost" /></div>
+                  <div class="field"><label>Ollama model</label><input id="settingsOllamaModel" /></div>
+                  <button id="saveSettingsBtn" class="primary">Save Settings</button>
+                </div>
+                <div id="settingsOut" class="output muted" style="margin-top:12px;">Settings load automatically.</div>
+              </div>
+            </article>
+          </section>
         </div>
-        <div class="search-row" style="margin-bottom:8px;">
-          <input id="tagListMessageId" placeholder="Message ID to view tags" />
-          <button id="loadTagsBtn" class="secondary">Load tags</button>
-        </div>
-        <div id="tagOut" class="muted">No tags loaded.</div>
-      </div>
-    </div>
+
+        <aside class="right-rail">
+          <article class="panel">
+            <div class="panel-header"><h3>Recent Activity</h3></div>
+            <div class="panel-body"><div id="recentActivity" class="list"></div></div>
+          </article>
+          <article class="panel">
+            <div class="panel-header"><h3>Trending Tags</h3></div>
+            <div class="panel-body"><div id="tagCloud" class="badge-row"></div></div>
+          </article>
+          <article class="panel">
+            <div class="panel-header"><h3>Context Viewer</h3></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <input id="contextMessageId" placeholder="Message ID" />
+                <input id="contextWindow" type="number" value="6" min="1" />
+              </div>
+              <button id="loadContextBtn" class="primary" style="margin-top:8px;width:100%;">Load Context</button>
+              <div id="contextOut" class="output muted" style="margin-top:10px;">No context loaded.</div>
+            </div>
+          </article>
+        </aside>
+      </section>
+    </main>
   </div>
 
-<script>
-const els = {
-  q: document.getElementById('q'),
-  sharedUrl: document.getElementById('sharedUrl'),
-  sharedTitle: document.getElementById('sharedTitle'),
-  sharedSaveHtml: document.getElementById('sharedSaveHtml'),
-  importSharedBtn: document.getElementById('importSharedBtn'),
-  sharedImportOut: document.getElementById('sharedImportOut'),
-  searchBtn: document.getElementById('searchBtn'),
-  results: document.getElementById('results'),
-  convTitle: document.getElementById('convTitle'),
-  convMeta: document.getElementById('convMeta'),
-  messages: document.getElementById('messages'),
-  contextMessageId: document.getElementById('contextMessageId'),
-  contextWindow: document.getElementById('contextWindow'),
-  loadContextBtn: document.getElementById('loadContextBtn'),
-  context: document.getElementById('context'),
-  tagMessageId: document.getElementById('tagMessageId'),
-  tagName: document.getElementById('tagName'),
-  addTagBtn: document.getElementById('addTagBtn'),
-  tagListMessageId: document.getElementById('tagListMessageId'),
-  loadTagsBtn: document.getElementById('loadTagsBtn'),
-  tagOut: document.getElementById('tagOut'),
-};
-
-async function jget(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function jpost(url, body) {
-  const r = await fetch(url, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-function messageLi(m) {
-  const li = document.createElement('li');
-  li.innerHTML = `<div class="row"><strong>#${m.id} ${m.role}</strong><button class="secondary" data-mid="${m.id}">Context</button></div>
-                  <div class="meta">${m.created_at || ''}</div>
-                  <div class="msg"></div>`;
-  li.querySelector('.msg').textContent = m.content;
-  li.querySelector('button').addEventListener('click', () => {
-    els.contextMessageId.value = m.id;
-    loadContext();
-  });
-  return li;
-}
-
-async function search() {
-  const q = els.q.value.trim();
-  els.results.innerHTML = '';
-  if (!q) return;
-  const rows = await jget(`/api/search?q=${encodeURIComponent(q)}`);
-  if (!rows.length) {
-    els.results.innerHTML = '<li class="muted">No results.</li>';
-    return;
-  }
-  for (const r of rows) {
-    const li = document.createElement('li');
-    li.innerHTML = `<div class="row"><strong>#${r.message_id}</strong><button class="secondary">Open conversation ${r.conversation_id}</button></div>
-                    <div class="meta">${r.role} · ${r.conversation_title || '(untitled)'}</div>
-                    <div class="msg"></div>`;
-    li.querySelector('.msg').textContent = r.snippet || '';
-    li.querySelector('button').addEventListener('click', () => loadConversation(r.conversation_id));
-    els.results.appendChild(li);
-  }
-}
-
-async function loadConversation(conversationId) {
-  const data = await jget(`/api/conversations/${conversationId}`);
-  els.convTitle.textContent = `Conversation Viewer — #${data.id} ${data.title || '(untitled)'}`;
-  els.convMeta.textContent = `provider=${data.provider} · messages=${data.messages.length}`;
-  els.messages.innerHTML = '';
-  for (const m of data.messages) {
-    els.messages.appendChild(messageLi(m));
-  }
-}
-
-async function loadContext() {
-  const mid = Number(els.contextMessageId.value || 0);
-  const window = Number(els.contextWindow.value || 6);
-  if (!mid) return;
-  const data = await jget(`/api/messages/${mid}/context?window=${window}`);
-  const box = document.createElement('div');
-  for (const item of data.items) {
-    const row = document.createElement('div');
-    row.className = item.is_target ? 'target' : '';
-    row.style.padding = '6px';
-    row.style.borderRadius = '6px';
-    row.style.marginBottom = '4px';
-    row.innerHTML = `<div class="meta">#${item.id} ${item.role} · ${item.created_at || ''}</div><div class="msg"></div>`;
-    row.querySelector('.msg').textContent = item.content;
-    box.appendChild(row);
-  }
-  els.context.innerHTML = '';
-  els.context.appendChild(box);
-}
-
-async function addTag() {
-  const mid = Number(els.tagMessageId.value || 0);
-  const tag = els.tagName.value.trim();
-  if (!mid || !tag) return;
-  const data = await jpost(`/api/messages/${mid}/tags`, { tag });
-  els.tagOut.innerHTML = data.tags.map(t => `<span class="pill">${t}</span>`).join(' ');
-}
-
-async function loadTags() {
-  const mid = Number(els.tagListMessageId.value || 0);
-  if (!mid) return;
-  const data = await jget(`/api/messages/${mid}/tags`);
-  els.tagOut.innerHTML = data.tags.length ? data.tags.map(t => `<span class="pill">${t}</span>`).join(' ') : '<span class="muted">No tags</span>';
-}
-
-async function importSharedChat() {
-  const url = els.sharedUrl.value.trim();
-  if (!url) return;
-  const payload = {
-    url,
-    title: els.sharedTitle.value.trim() || null,
-    save_raw_html: Boolean(els.sharedSaveHtml.checked),
-  };
-  try {
-    const data = await jpost('/api/import/shared-chat', payload);
-    if (data.duplicate) {
-      els.sharedImportOut.innerHTML = `Already imported as conversation <strong>#${data.conversation_id}</strong>.`;
-      await loadConversation(data.conversation_id);
-      return;
-    }
-    els.sharedImportOut.innerHTML = `Imported conversation <strong>#${data.conversation_id}</strong> with ${data.messages} messages.`;
-    await loadConversation(data.conversation_id);
-  } catch (err) {
-    els.sharedImportOut.textContent = `Import failed: ${err.message}`;
-  }
-}
-
-els.searchBtn.addEventListener('click', search);
-els.q.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-els.loadContextBtn.addEventListener('click', loadContext);
-els.addTagBtn.addEventListener('click', addTag);
-els.loadTagsBtn.addEventListener('click', loadTags);
-els.importSharedBtn.addEventListener('click', importSharedChat);
-els.sharedUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') importSharedChat(); });
-</script>
+  <div id="toast" class="toast"></div>
+<script src="/static/dashboard.js"></script>
 </body>
 </html>
+
+
