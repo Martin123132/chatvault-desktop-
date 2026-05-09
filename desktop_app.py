@@ -23,7 +23,15 @@ from src.paths import get_data_dir, resolve_db_path
 HOST = "127.0.0.1"
 
 
-def _pick_free_port(host: str = HOST) -> int:
+def _pick_free_port(host: str = HOST, preferred_port: int = 8000) -> int:
+    if preferred_port > 0:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind((host, preferred_port))
+                return preferred_port
+        except OSError:
+            pass
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
         return int(sock.getsockname()[1])
