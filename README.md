@@ -1,4 +1,9 @@
-﻿<img width="1448" height="1086" alt="a447b52a-bd2a-44b1-9631-3459dd4d747c" src="https://github.com/user-attachments/assets/0f963a49-b261-442b-a645-bd6d72cef745" />
+
+ 
+ <img width="1448" height="1086" alt="a447b52a-bd2a-44b1-9631-3459dd4d747c" src="https://github.com/user-attachments/assets/0f963a49-b261-442b-a645-bd6d72cef745" />
+
+ <img width="1672" height="941" alt="43c9922a-00cb-466f-a52f-8a5f9af7c446" src="https://github.com/user-attachments/assets/96644868-cfb1-4b61-a87e-ecf4bab9e5b0" />
+
 
 ⭐ ChatVault
 <img width="1448" height="1086" alt="a48e06a9-265a-4a29-8021-10c7d4821a5c" src="https://github.com/user-attachments/assets/dbe5c862-e1ba-402a-b70e-dec0b7bb5b0d" />
