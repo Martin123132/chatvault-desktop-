@@ -50,6 +50,7 @@
         <button data-view-target="insights"><span class="nav-icon">A</span><span>Insights</span></button>
         <button data-view-target="replay"><span class="nav-icon">R</span><span>Replay</span></button>
         <button data-view-target="tags"><span class="nav-icon">T</span><span>Tags</span></button>
+        <button data-view-target="doctor"><span class="nav-icon">D</span><span>Setup Doctor</span></button>
         <button data-view-target="settings"><span class="nav-icon">K</span><span>Settings</span></button>
       </nav>
 
@@ -108,6 +109,7 @@
               <div class="feature-card" data-view-target="replay"><strong>Timeline Replay</strong><span>Play conversations back in order.</span></div>
               <div class="feature-card" data-view-target="tags"><strong>Tags</strong><span>Create and search message tags.</span></div>
               <div class="feature-card" data-view-target="insights"><strong>Analytics</strong><span>Summaries, themes, and follow-ups.</span></div>
+              <div class="feature-card" data-view-target="doctor"><strong>Setup Doctor</strong><span>Check Python, data, models, imports, and extension files.</span></div>
               <div class="feature-card" data-view-target="settings"><strong>Settings</strong><span>Keys, models, offline mode, Ollama.</span></div>
             </div>
 
@@ -154,6 +156,16 @@
                   <button id="searchBtn" class="primary">Search</button>
                 </div>
                 <div id="searchResults" class="list" style="margin-top:12px;"></div>
+              </div>
+            </article>
+          </section>
+
+          <section id="view-doctor" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Setup Doctor</h2><button id="runDoctorBtn" class="primary">Run Checks</button></div>
+              <div class="panel-body">
+                <div id="doctorSummary" class="doctor-summary"></div>
+                <div id="doctorList" class="list" style="margin-top:12px;"></div>
               </div>
             </article>
           </section>
@@ -215,6 +227,22 @@
           </section>
 
           <section id="view-imports" class="view">
+            <article class="panel">
+              <div class="panel-header"><h2>Import Wizard</h2><button id="wizardImportBtn" class="primary">Start Import</button></div>
+              <div class="panel-body">
+                <div class="form-grid three">
+                  <div class="field"><label>Import type</label><select id="wizardSource"><option value="auto">Auto-detect</option><option value="chatgpt">ChatGPT JSON</option><option value="chatgpt_html">ChatGPT HTML</option><option value="claude">Claude JSON</option><option value="documents">Research document</option></select></div>
+                  <div class="field"><label>Shared URL or local path</label><input id="wizardPath" placeholder="https://chatgpt.com/share/... or C:\Users\you\Documents" /></div>
+                  <div class="field"><label>File upload</label><input id="wizardFile" type="file" /></div>
+                </div>
+                <div class="action-row" style="margin-top:12px;">
+                  <label class="check-row"><input id="wizardNoEmbeddings" type="checkbox" /> Skip embeddings</label>
+                  <label class="check-row"><input id="wizardRecursive" type="checkbox" checked /> Recursive folders</label>
+                </div>
+                <div id="wizardImportOut" class="output muted" style="margin-top:12px;">No wizard import started yet.</div>
+              </div>
+            </article>
+
             <div class="panel-grid">
               <article class="panel">
                 <div class="panel-header"><h2>Upload Import</h2></div>
@@ -383,6 +411,13 @@
                   <div class="field"><label>Ollama model</label><input id="settingsOllamaModel" /></div>
                   <button id="saveSettingsBtn" class="primary">Save Settings</button>
                 </div>
+                <div class="action-row" style="margin-top:12px;">
+                  <button id="testOpenAIBtn">Test OpenAI</button>
+                  <button id="testAnthropicBtn">Test Anthropic</button>
+                  <button id="testOllamaBtn">Test Ollama</button>
+                  <button data-view-target="doctor" class="ghost">Open Setup Doctor</button>
+                </div>
+                <div id="modelTestOut" class="output muted" style="margin-top:12px;">No model test run yet.</div>
                 <div id="settingsOut" class="output muted" style="margin-top:12px;">Settings load automatically.</div>
               </div>
             </article>

@@ -374,6 +374,28 @@
     }
     .badge.violet { border-color: rgba(155, 108, 255, 0.28); background: rgba(155, 108, 255, 0.11); color: #dbcfff; }
     .badge.amber { border-color: rgba(240, 194, 91, 0.28); background: rgba(240, 194, 91, 0.11); color: #ffe4a0; }
+    .doctor-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .doctor-item .item-text { max-width: 880px; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 72px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+      border: 1px solid rgba(134, 232, 255, 0.16);
+      white-space: nowrap;
+    }
+    .status-ok { color: #c9ffd9; background: rgba(98, 224, 141, 0.12); border-color: rgba(98, 224, 141, 0.28); }
+    .status-warn { color: #ffe4a0; background: rgba(240, 194, 91, 0.12); border-color: rgba(240, 194, 91, 0.3); }
+    .status-error { color: #ffd9d9; background: rgba(255, 119, 119, 0.12); border-color: rgba(255, 119, 119, 0.34); }
 
     .conversation-view {
       display: grid;

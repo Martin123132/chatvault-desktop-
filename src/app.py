@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+import importlib.util
 import json
 import os
 from pathlib import Path
 import sys
 from typing import Any
+from urllib import error as urlerror
+from urllib import request as urlrequest
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -142,6 +145,14 @@ class SettingsPayload(BaseModel):
     clear_anthropic_key: bool = False
 
 
+class ModelTestPayload(BaseModel):
+    backend: str
+    model: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    ollama_host: str | None = None
+
+
 class CouncilPayload(BaseModel):
     question: str
 
@@ -241,6 +252,10 @@ def _mask_secret(value: str | None) -> str:
     if len(value) <= 8:
         return "saved"
     return f"...{value[-4:]}"
+
+
+def _package_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
 
 
 def _env_file_path() -> Path:
@@ -382,6 +397,217 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
+def _doctor_item(
+    item_id: str,
+    label: str,
+    status: str,
+    detail: str,
+    action_view: str | None = None,
+    action_label: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": item_id,
+        "label": label,
+        "status": status,
+        "detail": detail,
+        "action_view": action_view,
+        "action_label": action_label,
+    }
+
+
+def _ping_ollama(host: str | None) -> tuple[bool, str]:
+    base = (host or "http://127.0.0.1:11434").rstrip("/")
+    try:
+        with urlrequest.urlopen(f"{base}/api/tags", timeout=2.5) as resp:
+            if resp.status >= 400:
+                return False, f"Ollama returned HTTP {resp.status}."
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except urlerror.URLError as exc:
+        return False, f"Could not reach Ollama at {base}: {exc.reason}"
+    except Exception as exc:
+        return False, f"Could not reach Ollama at {base}: {exc}"
+    models = [m.get("name", "") for m in data.get("models", []) if isinstance(m, dict)]
+    if models:
+        return True, f"Ollama is running with {len(models)} model(s): {', '.join(models[:3])}."
+    return True, "Ollama is running, but no local models were listed."
+
+
+def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
+    settings = _settings_snapshot()
+    items: list[dict[str, Any]] = []
+
+    python_ok = sys.version_info >= (3, 10)
+    items.append(
+        _doctor_item(
+            "python",
+            "Python",
+            "ok" if python_ok else "error",
+            f"Python {sys.version.split()[0]} detected." if python_ok else "Python 3.10 or newer is required.",
+        )
+    )
+
+    required_packages = {
+        "fastapi": "fastapi",
+        "uvicorn": "uvicorn",
+        "openai": "openai",
+        "requests": "requests",
+        "bs4": "beautifulsoup4",
+        "sentence_transformers": "sentence-transformers",
+        "multipart": "python-multipart",
+    }
+    missing = [label for module, label in required_packages.items() if not _package_available(module)]
+    items.append(
+        _doctor_item(
+            "dependencies",
+            "Dependencies",
+            "ok" if not missing else "error",
+            "All required packages are installed." if not missing else "Missing: " + ", ".join(missing),
+        )
+    )
+
+    try:
+        data_dir = get_data_dir()
+        probe = data_dir / ".chatvault_write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        items.append(_doctor_item("data_dir", "Data Folder", "ok", f"Writable at {data_dir}."))
+    except Exception as exc:
+        items.append(_doctor_item("data_dir", "Data Folder", "error", f"Could not write to data folder: {exc}"))
+
+    try:
+        cur = con.cursor()
+        cur.execute("PRAGMA quick_check")
+        db_status = str(cur.fetchone()[0])
+        items.append(
+            _doctor_item(
+                "database",
+                "Database",
+                "ok" if db_status.lower() == "ok" else "error",
+                f"{db_status} at {db_file}.",
+            )
+        )
+    except Exception as exc:
+        items.append(_doctor_item("database", "Database", "error", f"Database check failed: {exc}"))
+
+    if settings["offline"] and settings["backend"] != "ollama":
+        items.append(
+            _doctor_item(
+                "offline",
+                "Offline Mode",
+                "error",
+                "Offline mode is on, but the default backend is not Ollama.",
+                "settings",
+                "Open Settings",
+            )
+        )
+    else:
+        items.append(_doctor_item("offline", "Offline Mode", "ok", "Offline/backend settings are compatible."))
+
+    has_remote_key = bool(settings["openai_key_saved"] or settings["anthropic_key_saved"])
+    if settings["backend"] in {"openai", "anthropic"} and not has_remote_key:
+        items.append(
+            _doctor_item(
+                "api_keys",
+                "API Keys",
+                "warn",
+                "No OpenAI or Anthropic API key is saved. Local search still works.",
+                "settings",
+                "Add Keys",
+            )
+        )
+    else:
+        items.append(_doctor_item("api_keys", "API Keys", "ok", "Model key settings look usable."))
+
+    if settings["backend"] == "ollama" or settings["offline"]:
+        ok, detail = _ping_ollama(settings["ollama_host"])
+        items.append(
+            _doctor_item(
+                "ollama",
+                "Ollama",
+                "ok" if ok else "warn",
+                detail,
+                "settings",
+                "Open Settings",
+            )
+        )
+    else:
+        items.append(_doctor_item("ollama", "Ollama", "ok", "Ollama is optional unless you use local/offline mode."))
+
+    cur = con.cursor()
+    cur.execute("SELECT COUNT(*) FROM conversations")
+    conversation_count = int(cur.fetchone()[0])
+    items.append(
+        _doctor_item(
+            "imports",
+            "Imported Data",
+            "ok" if conversation_count else "warn",
+            f"{conversation_count} conversation(s) in the vault." if conversation_count else "No conversations imported yet.",
+            "imports",
+            "Import Data",
+        )
+    )
+
+    extension_ok = (root / "browser_extension" / "manifest.json").exists()
+    items.append(
+        _doctor_item(
+            "browser_extension",
+            "Browser Extension",
+            "ok" if extension_ok else "warn",
+            "Browser extension files are present." if extension_ok else "Browser extension files were not found.",
+        )
+    )
+
+    counts = {status: sum(1 for item in items if item["status"] == status) for status in ("ok", "warn", "error")}
+    return {"items": items, "counts": counts, "settings": settings}
+
+
+def _test_model_connection(payload: ModelTestPayload) -> dict[str, Any]:
+    backend = (payload.backend or "").strip().lower()
+    if backend not in {"openai", "anthropic", "ollama"}:
+        raise HTTPException(status_code=400, detail="Backend must be openai, anthropic, or ollama")
+    model = (payload.model or "").strip() or None
+    overrides = {
+        "OPENAI_API_KEY": (payload.openai_api_key or "").strip() or None,
+        "ANTHROPIC_API_KEY": (payload.anthropic_api_key or "").strip() or None,
+        "OLLAMA_HOST": (payload.ollama_host or "").strip() or None,
+    }
+
+    if backend == "ollama":
+        ok, detail = _ping_ollama(overrides["OLLAMA_HOST"] or os.getenv("OLLAMA_HOST"))
+        return {"ok": ok, "backend": backend, "model": model or os.getenv("OLLAMA_MODEL", "llama3"), "detail": detail}
+
+    if _bool_env("CHATVAULT_OFFLINE", False):
+        return {"ok": False, "backend": backend, "model": model, "detail": "Offline mode blocks remote model tests."}
+
+    if backend == "openai" and not (overrides["OPENAI_API_KEY"] or os.getenv("OPENAI_API_KEY")):
+        return {"ok": False, "backend": backend, "model": model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o-mini"), "detail": "OPENAI_API_KEY is not saved."}
+    if backend == "anthropic" and not (overrides["ANTHROPIC_API_KEY"] or os.getenv("ANTHROPIC_API_KEY")):
+        return {"ok": False, "backend": backend, "model": model or os.getenv("ANTHROPIC_MODEL_DEFAULT", "claude-3-5-sonnet-20241022"), "detail": "ANTHROPIC_API_KEY is not saved."}
+
+    previous = {key: os.getenv(key) for key in overrides}
+    try:
+        for key, value in overrides.items():
+            if value:
+                os.environ[key] = value
+        reply = generate_response(
+            messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+            backend=backend,
+            model=model,
+            temperature=0,
+            max_tokens=8,
+        )
+    except Exception as exc:
+        return {"ok": False, "backend": backend, "model": model, "detail": str(exc)}
+    finally:
+        for key, value in previous.items():
+            if overrides.get(key):
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    return {"ok": True, "backend": backend, "model": model, "detail": f"{backend} responded: {_snippet(reply, 80) or 'OK'}"}
+
+
 def _project_conversation_ids(con: Any, project_id: int | None) -> set[int]:
     if project_id is None:
         return set()
@@ -513,7 +739,8 @@ def _llm_answer(question: str, citations: list[dict[str, Any]]) -> str:
 
 def make_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="ChatVault Dashboard")
-    con = connect(resolve_db_path(db_path))
+    db_file = resolve_db_path(db_path)
+    con = connect(db_file)
 
     root = _root_dir()
     templates_dir = root / "templates"
@@ -552,6 +779,10 @@ def make_app(db_path: str | None = None) -> FastAPI:
             "settings": settings,
         }
 
+    @app.get("/api/setup/doctor")
+    def api_setup_doctor() -> dict[str, Any]:
+        return _setup_doctor_report(con, db_file, root)
+
     @app.post("/api/settings")
     def api_save_settings(payload: SettingsPayload) -> dict[str, Any]:
         updates: dict[str, str | None] = {}
@@ -584,6 +815,10 @@ def make_app(db_path: str | None = None) -> FastAPI:
                 updates[key] = value.strip()
         path = _write_env_updates(updates)
         return {"ok": True, "env_file": str(path), "settings": _settings_snapshot()}
+
+    @app.post("/api/settings/test-model")
+    def api_test_model(payload: ModelTestPayload) -> dict[str, Any]:
+        return _test_model_connection(payload)
 
     @app.get("/api/stats")
     def api_stats() -> dict[str, Any]:
