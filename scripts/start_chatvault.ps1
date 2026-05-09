@@ -108,6 +108,51 @@ function Invoke-HostPython {
     & $script:PythonCommand @combinedArgs
 }
 
+function Repair-MovedVenv {
+    param([string]$VenvRoot)
+
+    if (!(Test-Path -LiteralPath $VenvRoot)) {
+        return
+    }
+
+    $metadataFiles = @(
+        (Join-Path $VenvRoot "pyvenv.cfg"),
+        (Join-Path $VenvRoot "Scripts\activate"),
+        (Join-Path $VenvRoot "Scripts\activate.bat"),
+        (Join-Path $VenvRoot "Scripts\activate.fish"),
+        (Join-Path $VenvRoot "Scripts\Activate.ps1")
+    )
+
+    $currentVenvRoot = (Resolve-Path -LiteralPath $VenvRoot).Path
+    $pathPattern = "[A-Za-z]:\\[^`r`n""'<>|]*?\.venv"
+    $changed = $false
+
+    foreach ($file in $metadataFiles) {
+        if (!(Test-Path -LiteralPath $file)) {
+            continue
+        }
+
+        $text = Get-Content -LiteralPath $file -Raw
+        $updated = $text
+        $matches = [regex]::Matches($text, $pathPattern)
+        foreach ($match in $matches) {
+            if ($match.Value -ne $currentVenvRoot) {
+                $updated = $updated.Replace($match.Value, $currentVenvRoot)
+            }
+        }
+
+        if ($updated -ne $text) {
+            Set-Content -LiteralPath $file -Value $updated -Encoding ascii
+            $changed = $true
+        }
+    }
+
+    if ($changed) {
+        Write-Section "Repaired moved private environment paths"
+        Write-Host "Updated .venv metadata to use $currentVenvRoot"
+    }
+}
+
 try {
     Write-Host "ChatVault one-click starter"
     Write-Host "Folder: $script:RepoRoot"
@@ -117,6 +162,7 @@ try {
     Write-Host "Using Python $script:PythonVersion"
 
     $venvPython = Join-Path $script:RepoRoot ".venv\Scripts\python.exe"
+    $venvRoot = Join-Path $script:RepoRoot ".venv"
     if (!(Test-Path -LiteralPath $venvPython)) {
         Write-Section "Creating a private Python environment"
         Invoke-HostPython -m venv ".venv"
@@ -124,6 +170,8 @@ try {
             Stop-Friendly "Python could not create the .venv environment."
         }
     }
+
+    Repair-MovedVenv -VenvRoot $venvRoot
 
     if (!(Test-Path -LiteralPath $venvPython)) {
         Stop-Friendly "The .venv Python executable was not created where expected: $venvPython"
