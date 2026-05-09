@@ -29,7 +29,7 @@ def _pick_free_port(host: str = HOST) -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_for_healthz(host: str, port: int, timeout_s: float = 12.0) -> bool:
+def _wait_for_healthz(host: str, port: int, timeout_s: float = 45.0) -> bool:
     url = f"http://{host}:{port}/healthz"
     started = time.time()
     while (time.time() - started) < timeout_s:
@@ -60,6 +60,9 @@ def main() -> int:
     from src.app import make_app
 
     port = _pick_free_port(HOST)
+    url = f"http://{HOST}:{port}"
+    print(f"ChatVault is starting at {url}", flush=True)
+
     app = make_app(resolve_db_path())
     config = uvicorn.Config(app=app, host=HOST, port=port, log_level="warning")
     server = uvicorn.Server(config=config)
@@ -68,9 +71,12 @@ def main() -> int:
     thread.start()
 
     if _wait_for_healthz(HOST, port):
-        webbrowser.open(f"http://{HOST}:{port}")
+        print(f"ChatVault is ready: {url}", flush=True)
+        opened = webbrowser.open(url)
+        if not opened:
+            print(f"If your browser did not open, paste this into it: {url}", flush=True)
     else:
-        _show_startup_error("ChatVault could not start its local web server.")
+        _show_startup_error(f"ChatVault could not start its local web server.\n\nTried: {url}")
         server.should_exit = True
 
     thread.join()
