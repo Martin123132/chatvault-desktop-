@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+import importlib.util
 import json
 import os
 from pathlib import Path
 import sys
 from typing import Any
+from urllib import error as urlerror
+from urllib import request as urlrequest
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -22,16 +25,25 @@ try:
     from .chatvault_db import (
         add_message,
         add_tag,
+        attach_conversation_to_project,
         connect,
         create_conversation,
+        delete_conversation,
         get_archive_stats,
         get_conversation_messages,
         get_messages,
+        get_or_create_project,
+        list_conversations_in_project,
         list_conversations,
+        list_project_notes,
+        list_projects,
         list_titles,
+        save_project_note,
         search_by_tag,
         search_messages,
         semantic_search_messages,
+        set_project_model,
+        set_project_system_prompt,
     )
     from .council import run_council
     from .importer_chatgpt import import_conversations_json
@@ -47,16 +59,25 @@ except Exception:  # pragma: no cover
     from chatvault_db import (
         add_message,
         add_tag,
+        attach_conversation_to_project,
         connect,
         create_conversation,
+        delete_conversation,
         get_archive_stats,
         get_conversation_messages,
         get_messages,
+        get_or_create_project,
+        list_conversations_in_project,
         list_conversations,
+        list_project_notes,
+        list_projects,
         list_titles,
+        save_project_note,
         search_by_tag,
         search_messages,
         semantic_search_messages,
+        set_project_model,
+        set_project_system_prompt,
     )
     from council import run_council
     from importer_chatgpt import import_conversations_json
@@ -112,6 +133,7 @@ class ImportPathPayload(BaseModel):
 class SettingsPayload(BaseModel):
     backend: str | None = None
     offline: bool | None = None
+    setup_complete: bool | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     openai_model: str | None = None
@@ -121,6 +143,14 @@ class SettingsPayload(BaseModel):
     embeddings_model: str | None = None
     clear_openai_key: bool = False
     clear_anthropic_key: bool = False
+
+
+class ModelTestPayload(BaseModel):
+    backend: str
+    model: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    ollama_host: str | None = None
 
 
 class CouncilPayload(BaseModel):
@@ -134,6 +164,30 @@ class SummaryPayload(BaseModel):
 
 class RecommendPayload(BaseModel):
     use_llm: bool = False
+
+
+class AskVaultPayload(BaseModel):
+    question: str
+    project_id: int | None = None
+    semantic: bool = True
+    use_llm: bool = False
+    limit: int = 8
+
+
+class ProjectPayload(BaseModel):
+    name: str
+    system_prompt: str | None = None
+    preferred_model: str | None = None
+
+
+class ProjectConversationPayload(BaseModel):
+    conversation_id: int
+
+
+class ProjectNotePayload(BaseModel):
+    title: str
+    content: str = ""
+    note_id: int | None = None
 
 
 class ChatCreatePayload(BaseModel):
@@ -200,6 +254,10 @@ def _mask_secret(value: str | None) -> str:
     return f"...{value[-4:]}"
 
 
+def _package_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
+
+
 def _env_file_path() -> Path:
     return get_data_dir() / ".env"
 
@@ -239,6 +297,7 @@ def _write_env_updates(updates: dict[str, str | None]) -> Path:
         os.environ[key] = value
 
     ordered_keys = [
+        "CHATVAULT_SETUP_COMPLETE",
         "CHATVAULT_LLM_BACKEND",
         "CHATVAULT_OFFLINE",
         "OPENAI_API_KEY",
@@ -267,6 +326,7 @@ def _write_env_updates(updates: dict[str, str | None]) -> Path:
 
 def _settings_snapshot() -> dict[str, Any]:
     return {
+        "setup_complete": _bool_env("CHATVAULT_SETUP_COMPLETE", False),
         "backend": os.getenv("CHATVAULT_LLM_BACKEND", "openai"),
         "offline": _bool_env("CHATVAULT_OFFLINE", False),
         "openai_key_saved": bool(os.getenv("OPENAI_API_KEY")),
@@ -337,9 +397,350 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
+def _doctor_item(
+    item_id: str,
+    label: str,
+    status: str,
+    detail: str,
+    action_view: str | None = None,
+    action_label: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": item_id,
+        "label": label,
+        "status": status,
+        "detail": detail,
+        "action_view": action_view,
+        "action_label": action_label,
+    }
+
+
+def _ping_ollama(host: str | None) -> tuple[bool, str]:
+    base = (host or "http://127.0.0.1:11434").rstrip("/")
+    try:
+        with urlrequest.urlopen(f"{base}/api/tags", timeout=2.5) as resp:
+            if resp.status >= 400:
+                return False, f"Ollama returned HTTP {resp.status}."
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except urlerror.URLError as exc:
+        return False, f"Could not reach Ollama at {base}: {exc.reason}"
+    except Exception as exc:
+        return False, f"Could not reach Ollama at {base}: {exc}"
+    models = [m.get("name", "") for m in data.get("models", []) if isinstance(m, dict)]
+    if models:
+        return True, f"Ollama is running with {len(models)} model(s): {', '.join(models[:3])}."
+    return True, "Ollama is running, but no local models were listed."
+
+
+def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
+    settings = _settings_snapshot()
+    items: list[dict[str, Any]] = []
+
+    python_ok = sys.version_info >= (3, 10)
+    items.append(
+        _doctor_item(
+            "python",
+            "Python",
+            "ok" if python_ok else "error",
+            f"Python {sys.version.split()[0]} detected." if python_ok else "Python 3.10 or newer is required.",
+        )
+    )
+
+    required_packages = {
+        "fastapi": "fastapi",
+        "uvicorn": "uvicorn",
+        "openai": "openai",
+        "requests": "requests",
+        "bs4": "beautifulsoup4",
+        "sentence_transformers": "sentence-transformers",
+        "multipart": "python-multipart",
+    }
+    missing = [label for module, label in required_packages.items() if not _package_available(module)]
+    items.append(
+        _doctor_item(
+            "dependencies",
+            "Dependencies",
+            "ok" if not missing else "error",
+            "All required packages are installed." if not missing else "Missing: " + ", ".join(missing),
+        )
+    )
+
+    try:
+        data_dir = get_data_dir()
+        probe = data_dir / ".chatvault_write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        items.append(_doctor_item("data_dir", "Data Folder", "ok", f"Writable at {data_dir}."))
+    except Exception as exc:
+        items.append(_doctor_item("data_dir", "Data Folder", "error", f"Could not write to data folder: {exc}"))
+
+    try:
+        cur = con.cursor()
+        cur.execute("PRAGMA quick_check")
+        db_status = str(cur.fetchone()[0])
+        items.append(
+            _doctor_item(
+                "database",
+                "Database",
+                "ok" if db_status.lower() == "ok" else "error",
+                f"{db_status} at {db_file}.",
+            )
+        )
+    except Exception as exc:
+        items.append(_doctor_item("database", "Database", "error", f"Database check failed: {exc}"))
+
+    if settings["offline"] and settings["backend"] != "ollama":
+        items.append(
+            _doctor_item(
+                "offline",
+                "Offline Mode",
+                "error",
+                "Offline mode is on, but the default backend is not Ollama.",
+                "settings",
+                "Open Settings",
+            )
+        )
+    else:
+        items.append(_doctor_item("offline", "Offline Mode", "ok", "Offline/backend settings are compatible."))
+
+    has_remote_key = bool(settings["openai_key_saved"] or settings["anthropic_key_saved"])
+    if settings["backend"] in {"openai", "anthropic"} and not has_remote_key:
+        items.append(
+            _doctor_item(
+                "api_keys",
+                "API Keys",
+                "warn",
+                "No OpenAI or Anthropic API key is saved. Local search still works.",
+                "settings",
+                "Add Keys",
+            )
+        )
+    else:
+        items.append(_doctor_item("api_keys", "API Keys", "ok", "Model key settings look usable."))
+
+    if settings["backend"] == "ollama" or settings["offline"]:
+        ok, detail = _ping_ollama(settings["ollama_host"])
+        items.append(
+            _doctor_item(
+                "ollama",
+                "Ollama",
+                "ok" if ok else "warn",
+                detail,
+                "settings",
+                "Open Settings",
+            )
+        )
+    else:
+        items.append(_doctor_item("ollama", "Ollama", "ok", "Ollama is optional unless you use local/offline mode."))
+
+    cur = con.cursor()
+    cur.execute("SELECT COUNT(*) FROM conversations")
+    conversation_count = int(cur.fetchone()[0])
+    items.append(
+        _doctor_item(
+            "imports",
+            "Imported Data",
+            "ok" if conversation_count else "warn",
+            f"{conversation_count} conversation(s) in the vault." if conversation_count else "No conversations imported yet.",
+            "imports",
+            "Import Data",
+        )
+    )
+
+    extension_ok = (root / "browser_extension" / "manifest.json").exists()
+    items.append(
+        _doctor_item(
+            "browser_extension",
+            "Browser Extension",
+            "ok" if extension_ok else "warn",
+            "Browser extension files are present." if extension_ok else "Browser extension files were not found.",
+        )
+    )
+
+    counts = {status: sum(1 for item in items if item["status"] == status) for status in ("ok", "warn", "error")}
+    return {"items": items, "counts": counts, "settings": settings}
+
+
+def _test_model_connection(payload: ModelTestPayload) -> dict[str, Any]:
+    backend = (payload.backend or "").strip().lower()
+    if backend not in {"openai", "anthropic", "ollama"}:
+        raise HTTPException(status_code=400, detail="Backend must be openai, anthropic, or ollama")
+    model = (payload.model or "").strip() or None
+    overrides = {
+        "OPENAI_API_KEY": (payload.openai_api_key or "").strip() or None,
+        "ANTHROPIC_API_KEY": (payload.anthropic_api_key or "").strip() or None,
+        "OLLAMA_HOST": (payload.ollama_host or "").strip() or None,
+    }
+
+    if backend == "ollama":
+        ok, detail = _ping_ollama(overrides["OLLAMA_HOST"] or os.getenv("OLLAMA_HOST"))
+        return {"ok": ok, "backend": backend, "model": model or os.getenv("OLLAMA_MODEL", "llama3"), "detail": detail}
+
+    if _bool_env("CHATVAULT_OFFLINE", False):
+        return {"ok": False, "backend": backend, "model": model, "detail": "Offline mode blocks remote model tests."}
+
+    if backend == "openai" and not (overrides["OPENAI_API_KEY"] or os.getenv("OPENAI_API_KEY")):
+        return {"ok": False, "backend": backend, "model": model or os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o-mini"), "detail": "OPENAI_API_KEY is not saved."}
+    if backend == "anthropic" and not (overrides["ANTHROPIC_API_KEY"] or os.getenv("ANTHROPIC_API_KEY")):
+        return {"ok": False, "backend": backend, "model": model or os.getenv("ANTHROPIC_MODEL_DEFAULT", "claude-3-5-sonnet-20241022"), "detail": "ANTHROPIC_API_KEY is not saved."}
+
+    previous = {key: os.getenv(key) for key in overrides}
+    try:
+        for key, value in overrides.items():
+            if value:
+                os.environ[key] = value
+        reply = generate_response(
+            messages=[{"role": "user", "content": "Reply with exactly: OK"}],
+            backend=backend,
+            model=model,
+            temperature=0,
+            max_tokens=8,
+        )
+    except Exception as exc:
+        return {"ok": False, "backend": backend, "model": model, "detail": str(exc)}
+    finally:
+        for key, value in previous.items():
+            if overrides.get(key):
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    return {"ok": True, "backend": backend, "model": model, "detail": f"{backend} responded: {_snippet(reply, 80) or 'OK'}"}
+
+
+def _project_conversation_ids(con: Any, project_id: int | None) -> set[int]:
+    if project_id is None:
+        return set()
+    cur = con.cursor()
+    cur.execute("SELECT conversation_id FROM project_conversations WHERE project_id=?", (int(project_id),))
+    return {int(row[0]) for row in cur.fetchall()}
+
+
+def _project_exists(con: Any, project_id: int) -> bool:
+    cur = con.cursor()
+    cur.execute("SELECT 1 FROM projects WHERE id=?", (int(project_id),))
+    return cur.fetchone() is not None
+
+
+def _conversation_exists(con: Any, conversation_id: int) -> bool:
+    cur = con.cursor()
+    cur.execute("SELECT 1 FROM conversations WHERE id=?", (int(conversation_id),))
+    return cur.fetchone() is not None
+
+
+def _project_rows(con: Any) -> list[dict[str, Any]]:
+    cur = con.cursor()
+    rows = []
+    for project_id, name in list_projects(con):
+        cur.execute("SELECT COUNT(*) FROM project_conversations WHERE project_id=?", (int(project_id),))
+        conversation_count = int(cur.fetchone()[0])
+        cur.execute("SELECT COUNT(*) FROM project_notes WHERE project_id=?", (int(project_id),))
+        note_count = int(cur.fetchone()[0])
+        rows.append(
+            {
+                "id": int(project_id),
+                "name": name,
+                "conversation_count": conversation_count,
+                "note_count": note_count,
+            }
+        )
+    return rows
+
+
+def _citation_rows(
+    con: Any,
+    question: str,
+    project_id: int | None,
+    semantic: bool,
+    limit: int,
+) -> list[dict[str, Any]]:
+    capped = max(1, min(int(limit), 20))
+    project_ids = _project_conversation_ids(con, project_id)
+    citations: list[dict[str, Any]] = []
+
+    if semantic:
+        try:
+            rows = semantic_search_messages(con, query=question, limit=max(capped, 20))
+            for score, message_id, conversation_id, title, role, snippet in rows:
+                if project_id is not None and int(conversation_id) not in project_ids:
+                    continue
+                citations.append(
+                    {
+                        "score": round(float(score), 4),
+                        "message_id": int(message_id),
+                        "conversation_id": int(conversation_id),
+                        "conversation_title": title,
+                        "role": role,
+                        "snippet": snippet,
+                        "mode": "semantic",
+                    }
+                )
+                if len(citations) >= capped:
+                    break
+        except Exception:
+            citations = []
+
+    if not citations:
+        rows = search_messages(con, query=question, project_id=project_id, limit=capped)
+        citations = [
+            {
+                "message_id": int(message_id),
+                "conversation_id": int(conversation_id),
+                "conversation_title": title,
+                "role": role,
+                "snippet": snippet,
+                "mode": "keyword",
+            }
+            for message_id, conversation_id, title, role, snippet in rows
+        ]
+    return citations
+
+
+def _extractive_answer(question: str, citations: list[dict[str, Any]]) -> str:
+    if not citations:
+        return "I could not find anything in your vault for that yet."
+    lines = [
+        "Here are the strongest matches I found in your vault:",
+        "",
+    ]
+    for i, item in enumerate(citations[:5], start=1):
+        title = item.get("conversation_title") or "(untitled)"
+        snippet = (item.get("snippet") or "").replace("[", "").replace("]", "")
+        lines.append(f"{i}. {title} - {snippet}")
+    lines.append("")
+    lines.append("Turn on LLM answers if you want ChatVault to synthesize these into a fuller response.")
+    return "\n".join(lines)
+
+
+def _llm_answer(question: str, citations: list[dict[str, Any]]) -> str:
+    context_lines = []
+    for i, item in enumerate(citations, start=1):
+        context_lines.append(
+            f"[{i}] Conversation #{item['conversation_id']} / message #{item['message_id']} / "
+            f"{item.get('conversation_title') or '(untitled)'} / {item.get('role') or 'message'}:\n"
+            f"{item.get('snippet') or ''}"
+        )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You answer questions using the user's local ChatVault archive. "
+                "Ground the answer in the supplied snippets, say when evidence is thin, "
+                "and cite relevant source numbers like [1] or [2]."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Question: {question}\n\nVault snippets:\n\n" + "\n\n".join(context_lines),
+        },
+    ]
+    return generate_response(messages=messages, temperature=0.2, max_tokens=900)
+
+
 def make_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="ChatVault Dashboard")
-    con = connect(resolve_db_path(db_path))
+    db_file = resolve_db_path(db_path)
+    con = connect(db_file)
 
     root = _root_dir()
     templates_dir = root / "templates"
@@ -361,6 +762,27 @@ def make_app(db_path: str | None = None) -> FastAPI:
     def api_get_settings() -> dict[str, Any]:
         return _settings_snapshot()
 
+    @app.get("/api/setup/status")
+    def api_setup_status() -> dict[str, Any]:
+        settings = _settings_snapshot()
+        stats = get_archive_stats(con)
+        has_model_connection = bool(
+            settings["openai_key_saved"]
+            or settings["anthropic_key_saved"]
+            or settings["backend"] == "ollama"
+        )
+        return {
+            "setup_complete": settings["setup_complete"],
+            "needs_setup": not settings["setup_complete"],
+            "has_model_connection": has_model_connection,
+            "has_imported_data": int(stats["total_conversations"]) > 0,
+            "settings": settings,
+        }
+
+    @app.get("/api/setup/doctor")
+    def api_setup_doctor() -> dict[str, Any]:
+        return _setup_doctor_report(con, db_file, root)
+
     @app.post("/api/settings")
     def api_save_settings(payload: SettingsPayload) -> dict[str, Any]:
         updates: dict[str, str | None] = {}
@@ -371,13 +793,15 @@ def make_app(db_path: str | None = None) -> FastAPI:
             updates["CHATVAULT_LLM_BACKEND"] = backend
         if payload.offline is not None:
             updates["CHATVAULT_OFFLINE"] = "true" if payload.offline else "false"
+        if payload.setup_complete is not None:
+            updates["CHATVAULT_SETUP_COMPLETE"] = "true" if payload.setup_complete else "false"
         if payload.clear_openai_key:
             updates["OPENAI_API_KEY"] = None
         elif payload.openai_api_key and payload.openai_api_key.strip():
             updates["OPENAI_API_KEY"] = payload.openai_api_key.strip()
         if payload.clear_anthropic_key:
             updates["ANTHROPIC_API_KEY"] = None
-        elif payload.openai_api_key and payload.openai_api_key.strip():
+        elif payload.anthropic_api_key and payload.anthropic_api_key.strip():
             updates["ANTHROPIC_API_KEY"] = payload.anthropic_api_key.strip()
         optional_map = {
             "OPENAI_MODEL_DEFAULT": payload.openai_model,
@@ -392,6 +816,10 @@ def make_app(db_path: str | None = None) -> FastAPI:
         path = _write_env_updates(updates)
         return {"ok": True, "env_file": str(path), "settings": _settings_snapshot()}
 
+    @app.post("/api/settings/test-model")
+    def api_test_model(payload: ModelTestPayload) -> dict[str, Any]:
+        return _test_model_connection(payload)
+
     @app.get("/api/stats")
     def api_stats() -> dict[str, Any]:
         stats = get_archive_stats(con)
@@ -402,11 +830,14 @@ def make_app(db_path: str | None = None) -> FastAPI:
         top_tags = [{"tag": row[0], "count": int(row[1])} for row in cur.fetchall()]
         cur.execute("SELECT COUNT(*) FROM conversations WHERE source='document_import'")
         document_count = int(cur.fetchone()[0])
+        cur.execute("SELECT COUNT(*) FROM projects")
+        project_count = int(cur.fetchone()[0])
         return {
             **stats,
             "tag_count": tag_count,
             "top_tags": top_tags,
             "document_count": document_count,
+            "project_count": project_count,
             "settings": _settings_snapshot(),
         }
 
@@ -418,6 +849,75 @@ def make_app(db_path: str | None = None) -> FastAPI:
             "anthropic": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
             "ollama": ["llama3", "llama3.1", "mistral", "phi3"],
         }
+
+    @app.get("/api/projects")
+    def api_projects() -> list[dict[str, Any]]:
+        return _project_rows(con)
+
+    @app.post("/api/projects")
+    def api_create_project(payload: ProjectPayload) -> dict[str, Any]:
+        name = (payload.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="project name is required")
+        project_id = get_or_create_project(con, name)
+        if payload.system_prompt is not None:
+            set_project_system_prompt(con, project_id, payload.system_prompt)
+        if payload.preferred_model is not None:
+            set_project_model(con, project_id, payload.preferred_model)
+        return {"ok": True, "project": next(p for p in _project_rows(con) if p["id"] == project_id)}
+
+    @app.get("/api/projects/{project_id}")
+    def api_project_detail(project_id: int) -> dict[str, Any]:
+        if not _project_exists(con, project_id):
+            raise HTTPException(status_code=404, detail="project not found")
+        cur = con.cursor()
+        cur.execute(
+            "SELECT id, name, COALESCE(system_prompt,''), COALESCE(preferred_model,''), created_at FROM projects WHERE id=?",
+            (int(project_id),),
+        )
+        row = cur.fetchone()
+        conversations = [
+            {"id": int(cid), "title": title, "updated_at": updated_at}
+            for cid, title, updated_at in list_conversations_in_project(con, int(project_id))
+        ]
+        notes = [
+            {"id": int(nid), "title": title, "content": content, "created_at": created_at, "updated_at": updated_at}
+            for nid, title, content, created_at, updated_at in list_project_notes(con, int(project_id))
+        ]
+        return {
+            "id": int(row[0]),
+            "name": row[1],
+            "system_prompt": row[2],
+            "preferred_model": row[3],
+            "created_at": row[4],
+            "conversations": conversations,
+            "notes": notes,
+        }
+
+    @app.post("/api/projects/{project_id}/conversations")
+    def api_project_attach_conversation(project_id: int, payload: ProjectConversationPayload) -> dict[str, Any]:
+        if not _project_exists(con, project_id):
+            raise HTTPException(status_code=404, detail="project not found")
+        if not _conversation_exists(con, payload.conversation_id):
+            raise HTTPException(status_code=404, detail="conversation not found")
+        attach_conversation_to_project(con, int(project_id), int(payload.conversation_id))
+        return {"ok": True, "project": api_project_detail(project_id)}
+
+    @app.post("/api/projects/{project_id}/notes")
+    def api_project_save_note(project_id: int, payload: ProjectNotePayload) -> dict[str, Any]:
+        if not _project_exists(con, project_id):
+            raise HTTPException(status_code=404, detail="project not found")
+        try:
+            note_id = save_project_note(
+                con,
+                int(project_id),
+                title=payload.title,
+                content=payload.content,
+                note_id=payload.note_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"ok": True, "note_id": int(note_id), "project": api_project_detail(project_id)}
 
     @app.get("/api/conversations")
     def api_conversation_list(limit: int = 100) -> list[dict[str, Any]]:
@@ -478,6 +978,37 @@ def make_app(db_path: str | None = None) -> FastAPI:
             for message_id, conversation_id, title, role, snippet in rows
         ]
 
+    @app.post("/api/ask")
+    def api_ask_vault(payload: AskVaultPayload) -> dict[str, Any]:
+        question = (payload.question or "").strip()
+        if not question:
+            raise HTTPException(status_code=400, detail="question is required")
+        if payload.project_id is not None and not _project_exists(con, int(payload.project_id)):
+            raise HTTPException(status_code=404, detail="project not found")
+
+        citations = _citation_rows(
+            con,
+            question=question,
+            project_id=payload.project_id,
+            semantic=bool(payload.semantic),
+            limit=payload.limit,
+        )
+        if payload.use_llm and citations:
+            try:
+                answer = _llm_answer(question, citations)
+            except Exception as exc:
+                answer = _extractive_answer(question, citations)
+                return {
+                    "ok": True,
+                    "answer": answer,
+                    "citations": citations,
+                    "used_llm": False,
+                    "warning": str(exc),
+                }
+        else:
+            answer = _extractive_answer(question, citations)
+        return {"ok": True, "answer": answer, "citations": citations, "used_llm": bool(payload.use_llm and citations)}
+
     @app.get("/api/conversations/{conversation_id}")
     def api_conversation(conversation_id: int, limit: int = 5000, offset: int = 0) -> dict[str, Any]:
         cur = con.cursor()
@@ -500,6 +1031,13 @@ def make_app(db_path: str | None = None) -> FastAPI:
             "updated_at": conv[5],
             "messages": messages,
         }
+
+    @app.delete("/api/conversations/{conversation_id}")
+    def api_delete_conversation(conversation_id: int) -> dict[str, Any]:
+        if not _conversation_exists(con, conversation_id):
+            raise HTTPException(status_code=404, detail="conversation not found")
+        delete_conversation(con, int(conversation_id))
+        return {"ok": True, "conversation_id": int(conversation_id)}
 
     @app.get("/api/messages/{message_id}/context")
     def api_context(message_id: int, window: int = 6) -> dict[str, Any]:

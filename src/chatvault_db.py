@@ -176,6 +176,18 @@ def _ensure_schema_upgrades(con: sqlite3.Connection) -> None:
         cur.execute("ALTER TABLE conversations ADD COLUMN provider TEXT NOT NULL DEFAULT 'chatgpt'")
         con.commit()
 
+    cur.execute("PRAGMA table_info(projects)")
+    project_cols = {row[1] for row in cur.fetchall()}
+    added_project_col = False
+    if "system_prompt" not in project_cols:
+        cur.execute("ALTER TABLE projects ADD COLUMN system_prompt TEXT")
+        added_project_col = True
+    if "preferred_model" not in project_cols:
+        cur.execute("ALTER TABLE projects ADD COLUMN preferred_model TEXT")
+        added_project_col = True
+    if added_project_col:
+        con.commit()
+
 
 def _ensure_triggers(con: sqlite3.Connection) -> None:
     """Recreate FTS triggers to the latest definitions."""
@@ -474,7 +486,7 @@ def search_messages(
             cur.execute(
                 """
                 SELECT m.id, m.conversation_id, COALESCE(c.title,''), m.role,
-                       snippet(messages_fts, 0, '[', ']', '…', 12)
+                       snippet(messages_fts, 0, '[', ']', '...', 12)
                 FROM messages_fts
                 JOIN messages m ON m.id = messages_fts.rowid
                 JOIN conversations c ON c.id = m.conversation_id
@@ -488,7 +500,7 @@ def search_messages(
             cur.execute(
                 """
                 SELECT m.id, m.conversation_id, COALESCE(c.title,''), m.role,
-                       snippet(messages_fts, 0, '[', ']', '…', 12)
+                       snippet(messages_fts, 0, '[', ']', '...', 12)
                 FROM messages_fts
                 JOIN messages m ON m.id = messages_fts.rowid
                 JOIN conversations c ON c.id = m.conversation_id
