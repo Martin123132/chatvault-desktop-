@@ -8,7 +8,6 @@ from typing import Iterable, List, Sequence, Tuple
 
 DEFAULT_EMBED_MODEL = os.getenv("CHATVAULT_EMBEDDINGS_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 DEFAULT_EMBED_BACKEND = os.getenv("CHATVAULT_EMBEDDINGS_BACKEND", "sentence-transformers")
-DEFAULT_EMBED_MODEL = "all-MiniLM-L6-v2"
 
 
 @lru_cache(maxsize=1)

@@ -1,4 +1,4 @@
-<img width="1448" height="1086" alt="a447b52a-bd2a-44b1-9631-3459dd4d747c" src="https://github.com/user-attachments/assets/0f963a49-b261-442b-a645-bd6d72cef745" />
+﻿<img width="1448" height="1086" alt="a447b52a-bd2a-44b1-9631-3459dd4d747c" src="https://github.com/user-attachments/assets/0f963a49-b261-442b-a645-bd6d72cef745" />
 
 ⭐ ChatVault
 <img width="1448" height="1086" alt="a48e06a9-265a-4a29-8021-10c7d4821a5c" src="https://github.com/user-attachments/assets/dbe5c862-e1ba-402a-b70e-dec0b7bb5b0d" />
@@ -11,6 +11,31 @@ Everything lives in your chatvault.sqlite3.
 Nothing is uploaded. Nothing leaves your machine.
 
 ⸻
+## Quick Start On Windows
+
+For the easiest path:
+
+1. Download the GitHub repo as a ZIP.
+2. Extract the ZIP.
+3. Open the extracted folder.
+4. Double-click `START_HERE_WINDOWS.bat`.
+
+The starter finds Python 3.10+, creates a private `.venv`, installs dependencies, starts ChatVault, and opens the local dashboard in your browser. If Python is not on PATH, set a `CHATVAULT_PYTHON` environment variable to the full `python.exe` path before launching.
+
+## In-App Features
+
+The dashboard includes UI screens for the main ChatVault commands:
+
+- Imports: ChatGPT JSON, ChatGPT HTML, Claude JSON, shared ChatGPT URLs, and local research documents
+- Search: keyword search and semantic search
+- Conversations: full conversation viewer, message context, and tags
+- Chat: start a new AI chat from the browser UI
+- Council Mode: ask OpenAI, Anthropic, and Ollama backends and store the synthesis
+- Insights: summaries and recommendation reports
+- Replay: timeline playback for saved conversations
+- Settings: save API keys, model choices, Ollama settings, and offline mode without editing code
+
+API keys are saved to the per-user ChatVault `.env` file shown in Settings.
 
 🚀 Installation
 
@@ -144,7 +169,7 @@ Council Mode (multi-model debate)
 
 Ask the same question to multiple backends (OpenAI, Anthropic, Ollama) and store:
 	•	each model’s answer
-	•	a synthesised final answer
+	•	a synthesized final answer
 	•	full reasoning trail
 
 python chatvault.py council --question "How do we design a CPU?"
@@ -300,4 +325,5 @@ ChatVault Capture is a local-only Manifest V3 browser extension in `browser_exte
 This extension is intentionally local-first: it only sends capture payloads to `http://127.0.0.1:8000/api/browser-capture` on your own machine. It does not call OpenAI, Anthropic, or any external capture servers.
 
 <img width="1672" height="941" alt="189c3014-a08f-4511-9ee5-e19933356f7a" src="https://github.com/user-attachments/assets/181caa70-6495-4caa-a090-73f9a7448d73" />
+
 

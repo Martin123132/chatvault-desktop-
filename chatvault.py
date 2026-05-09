@@ -14,6 +14,9 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.chatvault_db import (
     add_message,
     add_tag,

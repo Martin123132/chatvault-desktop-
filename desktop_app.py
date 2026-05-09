@@ -17,7 +17,6 @@ import webbrowser
 import uvicorn
 from dotenv import load_dotenv
 
-from src.app import make_app
 from src.paths import get_data_dir, resolve_db_path
 
 
@@ -57,6 +56,8 @@ def main() -> int:
     user_env = data_dir / ".env"
     if user_env.exists():
         load_dotenv(user_env, override=True)
+
+    from src.app import make_app
 
     port = _pick_free_port(HOST)
     app = make_app(resolve_db_path())
