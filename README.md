@@ -311,32 +311,34 @@ See the included file for full text.
 
 ## ChatVault Capture browser extension
 
-ChatVault Capture is a local-only Manifest V3 browser extension in `browser_extension/` that captures visible conversations from `chatgpt.com` and saves them directly into your local ChatVault database through the FastAPI endpoint:
+ChatVault Capture is a local-only Manifest V3 browser extension in `browser_extension/` that captures visible conversations from ChatGPT, Claude, and Gemini and saves them directly into your local ChatVault database through the FastAPI endpoint:
 
 - `POST http://127.0.0.1:8000/api/browser-capture`
 
 ### What it supports
+- Live capture mode for supported AI chat pages as the visible thread changes.
 - Save full visible thread from popup button.
 - Right-click: **Save selected text to ChatVault**.
 - Right-click: **Save nearest assistant message**.
 - Preserves message role (`user`/`assistant`).
 - Includes exported Markdown text in capture metadata.
 - Includes metadata: provider, page URL, conversation title, and capture timestamp.
+- Updates the same captured conversation by page URL instead of duplicating the thread on every live snapshot.
 - Success/failure notifications in-browser.
+- Supported sites: `chatgpt.com`, `chat.openai.com`, `claude.ai`, and `gemini.google.com`.
 
 ### Install (Chrome/Edge)
-1. Start ChatVault web server locally:
-   - `uvicorn src.app:app --host 127.0.0.1 --port 8000`
+1. Start ChatVault with `START_HERE_WINDOWS.bat`. The desktop launcher prefers `http://127.0.0.1:8000` so the extension can find it. If that port is already busy, paste the printed ChatVault URL into the extension popup and add `/api/browser-capture`.
 2. Open extension management page:
    - Chrome: `chrome://extensions`
    - Edge: `edge://extensions`
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and choose `browser_extension/`.
-5. Open a ChatGPT conversation page (`https://chatgpt.com/...`).
-6. Use the popup **Save Thread** button or context menu actions.
+5. Open a supported AI conversation page.
+6. Use **Save visible thread**, context menu actions, or turn on **Live capture** in the popup.
 
 ### Security note
-This extension is intentionally local-first: it only sends capture payloads to `http://127.0.0.1:8000/api/browser-capture` on your own machine. It does not call OpenAI, Anthropic, or any external capture servers.
+This extension is intentionally local-first: it only sends capture payloads to your configured local ChatVault API on your own machine. It does not call OpenAI, Anthropic, Google, or any external capture servers. Live capture only reads the visible conversation page where the extension is installed and enabled.
 
 <img width="1672" height="941" alt="189c3014-a08f-4511-9ee5-e19933356f7a" src="https://github.com/user-attachments/assets/181caa70-6495-4caa-a090-73f9a7448d73" />
 

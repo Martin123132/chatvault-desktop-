@@ -105,6 +105,9 @@ class BrowserCaptureRequest(BaseModel):
     page_url: str
     conversation_title: str | None = None
     captured_at: str
+    external_id: str | None = None
+    capture_mode: str = "manual"
+    replace_existing: bool = False
     messages: list[BrowserCaptureMessagePayload] = Field(default_factory=list)
     markdown: str | None = None
     project: str | None = None
@@ -1088,6 +1091,9 @@ def make_app(db_path: str | None = None) -> FastAPI:
             page_url=payload.page_url,
             conversation_title=payload.conversation_title or "Captured Chat",
             captured_at=payload.captured_at,
+            external_id=payload.external_id,
+            capture_mode=payload.capture_mode,
+            replace_existing=payload.replace_existing,
             messages=[BrowserCaptureMessage(role=m.role, content=m.content, created_at=m.created_at) for m in payload.messages],
             markdown=payload.markdown,
             project=payload.project,

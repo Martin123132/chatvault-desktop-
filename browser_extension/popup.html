@@ -1,8 +1,102 @@
-<!doctype html><html><body>
-<h3>ChatVault Capture</h3>
-<label>Project <input id="project" /></label><br/>
-<label>Tags (comma) <input id="tags" /></label><br/>
-<button id="save">Save Thread</button>
-<div id="status"></div>
-<script src="popup.js"></script>
-</body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071014;
+      --panel: #0d171d;
+      --line: rgba(124, 236, 255, 0.18);
+      --text: #eef9fb;
+      --muted: #92a5ad;
+      --accent: #00d1c7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      width: 340px;
+      margin: 0;
+      padding: 14px;
+      font: 13px/1.35 system-ui, -apple-system, Segoe UI, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 0%, rgba(0, 209, 199, 0.14), transparent 32%), var(--bg);
+    }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    h1 { font-size: 16px; margin: 0; }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(13, 23, 29, 0.9);
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    label { display: block; color: var(--muted); margin-bottom: 4px; }
+    input {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      color: var(--text);
+      background: #071014;
+      padding: 8px;
+      outline: none;
+    }
+    input:focus { border-color: rgba(0, 209, 199, 0.65); }
+    .field { margin-bottom: 8px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .switch { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+    .switch input { width: auto; }
+    button {
+      width: 100%;
+      border: 1px solid rgba(0, 209, 199, 0.45);
+      border-radius: 7px;
+      padding: 9px 10px;
+      color: #001412;
+      background: var(--accent);
+      font-weight: 750;
+      cursor: pointer;
+    }
+    button.secondary {
+      color: var(--text);
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.14);
+    }
+    #status { color: var(--muted); min-height: 18px; }
+    .ok { color: #8effb7; }
+    .bad { color: #ff9aa8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ChatVault Capture</h1>
+    <span id="provider" class="pill">Checking</span>
+  </header>
+
+  <section class="panel">
+    <div class="row">
+      <label class="switch"><input id="autoCapture" type="checkbox" /> Live capture</label>
+      <span id="messageCount" class="pill">0 messages</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="field"><label>Project</label><input id="project" placeholder="Optional" /></div>
+    <div class="field"><label>Tags</label><input id="tags" placeholder="research, ai" /></div>
+    <div class="field"><label>ChatVault API</label><input id="apiUrl" /></div>
+    <button id="save">Save visible thread</button>
+  </section>
+
+  <section class="panel">
+    <button id="refresh" class="secondary">Refresh page status</button>
+  </section>
+
+  <div id="status">Ready.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
