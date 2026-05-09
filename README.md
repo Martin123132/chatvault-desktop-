@@ -36,6 +36,8 @@ The dashboard includes UI screens for the main ChatVault commands:
 - Conversations: full conversation viewer, message context, and tags
 - Ask My Vault: ask questions over your local archive with source citations; optional LLM synthesis can turn the matches into an answer
 - Projects: group conversations and notes into focused workspaces, then ask within that project scope
+- Setup Doctor: check Python, dependencies, database access, model settings, imports, and extension files
+- Import Wizard: guided file, folder, and shared-link importing from one panel
 - Chat: start a new AI chat from the browser UI
 - Council Mode: ask OpenAI, Anthropic, and Ollama backends and store the synthesis
 - Insights: summaries and recommendation reports
@@ -253,6 +255,8 @@ ChatVault includes a small FastAPI dashboard for:
 	•	conversation viewer
 	•	Ask My Vault citations
 	•	projects and notes
+	•	setup diagnostics
+	•	guided imports
 	•	context viewer
 	•	tagging
 

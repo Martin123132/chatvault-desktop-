@@ -76,6 +76,12 @@ function switchView(name) {
   document.querySelectorAll('[data-view-target]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.viewTarget === name && btn.closest('.nav'));
   });
+  if (name === 'doctor') loadDoctor();
+}
+
+function initialView() {
+  const requested = window.location.hash.replace(/^#/, '').trim();
+  return requested && document.querySelector(`#view-${requested}`) ? requested : 'home';
 }
 
 function wireNavigation() {
@@ -135,6 +141,61 @@ function renderStats() {
       cloud.appendChild(badge);
     });
   }
+}
+
+function statusClass(status) {
+  if (status === 'error') return 'status-error';
+  if (status === 'warn') return 'status-warn';
+  return 'status-ok';
+}
+
+async function loadDoctor() {
+  const list = $('doctorList');
+  if (!list) return;
+  list.innerHTML = '<div class="muted">Running checks...</div>';
+  try {
+    const data = await jget('/api/setup/doctor');
+    renderDoctor(data);
+  } catch (err) {
+    list.innerHTML = `<div class="item"><div class="item-title">Setup Doctor failed</div><div class="item-text">${escapeHtml(err.message)}</div></div>`;
+    showToast(err.message, true);
+  }
+}
+
+function renderDoctor(data) {
+  const counts = data.counts || {};
+  $('doctorSummary').innerHTML = `
+    <span class="status-pill status-ok">${counts.ok || 0} OK</span>
+    <span class="status-pill status-warn">${counts.warn || 0} Warning</span>
+    <span class="status-pill status-error">${counts.error || 0} Error</span>
+  `;
+  const list = $('doctorList');
+  list.innerHTML = '';
+  (data.items || []).forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'item doctor-item';
+    div.innerHTML = `
+      <div class="item-head">
+        <div>
+          <div class="item-title">${escapeHtml(item.label)}</div>
+          <div class="item-text">${escapeHtml(item.detail || '')}</div>
+        </div>
+        <span class="status-pill ${statusClass(item.status)}">${escapeHtml(item.status || 'ok')}</span>
+      </div>
+    `;
+    if (item.action_view) {
+      const row = document.createElement('div');
+      row.className = 'action-row';
+      row.style.marginTop = '8px';
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.textContent = item.action_label || 'Open';
+      btn.addEventListener('click', () => switchView(item.action_view));
+      row.appendChild(btn);
+      div.appendChild(row);
+    }
+    list.appendChild(div);
+  });
 }
 
 function conversationItem(conversation) {
@@ -538,6 +599,68 @@ async function importSharedChat() {
   }
 }
 
+function inferImportSource(selected, name) {
+  if (selected && selected !== 'auto') return selected;
+  const value = String(name || '').toLowerCase();
+  if (value.endsWith('.html') || value.endsWith('.htm')) return 'chatgpt_html';
+  if (value.includes('claude') && value.endsWith('.json')) return 'claude';
+  if (value.endsWith('.json')) return 'chatgpt';
+  return 'documents';
+}
+
+async function importWizard() {
+  const btn = $('wizardImportBtn');
+  const out = $('wizardImportOut');
+  const file = $('wizardFile').files[0];
+  const pathOrUrl = $('wizardPath').value.trim();
+  const selectedSource = $('wizardSource').value;
+  setBusy(btn, true, 'Importing...');
+  out.classList.remove('muted');
+  out.textContent = 'Importing...';
+  try {
+    let data;
+    if (file) {
+      const form = new FormData();
+      form.append('source', inferImportSource(selectedSource, file.name));
+      form.append('recursive', $('wizardRecursive').checked ? 'true' : 'false');
+      form.append('no_embeddings', $('wizardNoEmbeddings').checked ? 'true' : 'false');
+      form.append('chunk_size', '260');
+      form.append('chunk_overlap', '40');
+      form.append('file', file);
+      const res = await fetch('/api/import/upload', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await errorText(res));
+      data = await res.json();
+    } else if (/^https?:\/\/chatgpt\.com\/share\//i.test(pathOrUrl)) {
+      data = await jpost('/api/import/shared-chat', {
+        url: pathOrUrl,
+        title: null,
+        save_raw_html: false,
+        no_embeddings: $('wizardNoEmbeddings').checked,
+      });
+    } else if (pathOrUrl) {
+      data = await jpost('/api/import/path', {
+        path: pathOrUrl,
+        source: inferImportSource(selectedSource, pathOrUrl),
+        recursive: $('wizardRecursive').checked,
+        no_embeddings: $('wizardNoEmbeddings').checked,
+        chunk_size: 260,
+        chunk_overlap: 40,
+      });
+    } else {
+      throw new Error('Choose a file, shared URL, or local path.');
+    }
+    out.textContent = JSON.stringify(data, null, 2);
+    showToast('Import complete.');
+    await refreshAll();
+    if (data.conversation_id) loadConversation(data.conversation_id);
+  } catch (err) {
+    out.textContent = err.message;
+    showToast(err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
 async function importUpload() {
   const file = $('uploadFile').files[0];
   if (!file) return showToast('Choose a file first.', true);
@@ -819,6 +942,41 @@ async function saveSettings() {
   }
 }
 
+async function testModel(backend) {
+  const buttons = {
+    openai: $('testOpenAIBtn'),
+    anthropic: $('testAnthropicBtn'),
+    ollama: $('testOllamaBtn'),
+  };
+  const models = {
+    openai: $('settingsOpenAIModel').value.trim() || null,
+    anthropic: $('settingsAnthropicModel').value.trim() || null,
+    ollama: $('settingsOllamaModel').value.trim() || null,
+  };
+  const btn = buttons[backend];
+  const out = $('modelTestOut');
+  setBusy(btn, true, 'Testing...');
+  out.classList.remove('muted');
+  out.textContent = 'Testing...';
+  try {
+    const data = await jpost('/api/settings/test-model', {
+      backend,
+      model: models[backend],
+      openai_api_key: $('settingsOpenAIKey').value.trim() || null,
+      anthropic_api_key: $('settingsAnthropicKey').value.trim() || null,
+      ollama_host: $('settingsOllamaHost').value.trim() || null,
+    });
+    out.textContent = `${data.ok ? 'OK' : 'Needs attention'}: ${data.detail || ''}`;
+    showToast(data.ok ? `${backend} test passed.` : `${backend} test needs attention.`, !data.ok);
+    if (backend === 'ollama') await loadDoctor();
+  } catch (err) {
+    out.textContent = err.message;
+    showToast(err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
 async function showSetupIfNeeded() {
   try {
     const data = await jget('/api/setup/status');
@@ -876,6 +1034,7 @@ function wireActions() {
     if (event.key === 'Enter') runSearch();
   });
   $('refreshConversations').addEventListener('click', loadConversations);
+  $('runDoctorBtn').addEventListener('click', loadDoctor);
   $('askVaultBtn').addEventListener('click', () => askVault());
   $('createProjectBtn').addEventListener('click', createProject);
   $('projectSelect').addEventListener('change', () => {
@@ -886,6 +1045,7 @@ function wireActions() {
   $('saveProjectNoteBtn').addEventListener('click', saveProjectNote);
   $('projectAskBtn').addEventListener('click', askSelectedProject);
   $('importSharedBtn').addEventListener('click', importSharedChat);
+  $('wizardImportBtn').addEventListener('click', importWizard);
   $('uploadImportBtn').addEventListener('click', importUpload);
   $('pathImportBtn').addEventListener('click', importPath);
   $('runCouncilBtn').addEventListener('click', runCouncil);
@@ -901,6 +1061,9 @@ function wireActions() {
   $('addTagBtn').addEventListener('click', addTag);
   $('searchTagBtn').addEventListener('click', searchTag);
   $('saveSettingsBtn').addEventListener('click', saveSettings);
+  $('testOpenAIBtn').addEventListener('click', () => testModel('openai'));
+  $('testAnthropicBtn').addEventListener('click', () => testModel('anthropic'));
+  $('testOllamaBtn').addEventListener('click', () => testModel('ollama'));
   $('setupSaveBtn').addEventListener('click', () => saveSetup(true));
   $('setupSkipBtn').addEventListener('click', () => saveSetup(false));
 }
@@ -910,6 +1073,7 @@ async function init() {
   wireActions();
   try {
     await refreshAll();
+    switchView(initialView());
     await showSetupIfNeeded();
   } catch (err) {
     showToast(err.message, true);
