@@ -34,11 +34,13 @@ The dashboard includes UI screens for the main ChatVault commands:
 - Imports: ChatGPT JSON, ChatGPT HTML, Claude JSON, shared ChatGPT URLs, and local research documents
 - Search: keyword search and semantic search
 - Conversations: full conversation viewer, message context, and tags
+- Ask My Vault: ask questions over your local archive with source citations; optional LLM synthesis can turn the matches into an answer
+- Projects: group conversations and notes into focused workspaces, then ask within that project scope
 - Chat: start a new AI chat from the browser UI
 - Council Mode: ask OpenAI, Anthropic, and Ollama backends and store the synthesis
 - Insights: summaries and recommendation reports
 - Replay: timeline playback for saved conversations
-- Settings: save API keys, model choices, Ollama settings, and offline mode without editing code
+- Setup and Settings: save API keys, model choices, Ollama settings, first-run setup state, and offline mode without editing code
 
 API keys are saved to the per-user ChatVault `.env` file shown in Settings.
 
@@ -249,6 +251,8 @@ ChatVault includes a small FastAPI dashboard for:
 	•	search
 	•	results
 	•	conversation viewer
+	•	Ask My Vault citations
+	•	projects and notes
 	•	context viewer
 	•	tagging
 
@@ -275,6 +279,7 @@ Tables:
 	•	messages_fts (keyword search)
 	•	message_tags
 	•	message_embeddings
+	•	projects, project_conversations, project_notes
 
 You own this file completely.
 
