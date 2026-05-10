@@ -21,6 +21,15 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 try:
+    from .arcade import (
+        ArcadeError,
+        arcade_scoreboard,
+        create_arcade_session,
+        get_arcade_session,
+        list_arcade_sessions,
+        play_arcade_ai_turn,
+        submit_arcade_move,
+    )
     from .browser_capture import BrowserCaptureMessage, BrowserCapturePayload, import_browser_capture
     from .chatvault_db import (
         add_message,
@@ -55,6 +64,15 @@ try:
     from .llm_backends import generate_response
     from .paths import get_data_dir, resolve_db_path
 except Exception:  # pragma: no cover
+    from arcade import (
+        ArcadeError,
+        arcade_scoreboard,
+        create_arcade_session,
+        get_arcade_session,
+        list_arcade_sessions,
+        play_arcade_ai_turn,
+        submit_arcade_move,
+    )
     from browser_capture import BrowserCaptureMessage, BrowserCapturePayload, import_browser_capture
     from chatvault_db import (
         add_message,
@@ -131,6 +149,27 @@ class ImportPathPayload(BaseModel):
     no_embeddings: bool = False
     chunk_size: int = 260
     chunk_overlap: int = 40
+
+
+class ArcadeCreatePayload(BaseModel):
+    game_id: str
+    mode: str = "user_vs_ai"
+    p1_type: str = "user"
+    p1_backend: str | None = None
+    p1_label: str | None = None
+    p2_type: str = "ai"
+    p2_backend: str | None = "openai"
+    p2_label: str | None = None
+    project_id: int | None = None
+    memory_boost: bool = False
+
+
+class ArcadeMovePayload(BaseModel):
+    move: dict[str, Any]
+
+
+class ArcadeAiPayload(BaseModel):
+    backend: str | None = None
 
 
 class SettingsPayload(BaseModel):
@@ -457,6 +496,7 @@ def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
         "bs4": "beautifulsoup4",
         "sentence_transformers": "sentence-transformers",
         "multipart": "python-multipart",
+        "draughts": "py-draughts",
     }
     missing = [label for module, label in required_packages.items() if not _package_available(module)]
     items.append(
@@ -1080,6 +1120,54 @@ def make_app(db_path: str | None = None) -> FastAPI:
                 }
             )
         return {"conversation_id": conversation_id, "message_id": int(message_id), "items": items}
+
+    @app.get("/api/arcade/sessions")
+    def api_arcade_sessions(limit: int = 20) -> dict[str, Any]:
+        return {"sessions": list_arcade_sessions(con, limit=limit)}
+
+    @app.get("/api/arcade/scoreboard")
+    def api_arcade_scoreboard() -> dict[str, Any]:
+        return arcade_scoreboard(con)
+
+    @app.post("/api/arcade/sessions")
+    def api_arcade_create(payload: ArcadeCreatePayload) -> dict[str, Any]:
+        try:
+            return create_arcade_session(
+                con,
+                game_id=payload.game_id,
+                mode=payload.mode,
+                p1_type=payload.p1_type,
+                p1_backend=payload.p1_backend,
+                p1_label=payload.p1_label,
+                p2_type=payload.p2_type,
+                p2_backend=payload.p2_backend,
+                p2_label=payload.p2_label,
+                project_id=payload.project_id,
+                memory_boost=payload.memory_boost,
+            )
+        except ArcadeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/arcade/sessions/{session_id}")
+    def api_arcade_session(session_id: int) -> dict[str, Any]:
+        try:
+            return get_arcade_session(con, session_id)
+        except ArcadeError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/arcade/sessions/{session_id}/move")
+    def api_arcade_move(session_id: int, payload: ArcadeMovePayload) -> dict[str, Any]:
+        try:
+            return submit_arcade_move(con, session_id, payload.move, actor_type="user")
+        except ArcadeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/arcade/sessions/{session_id}/ai-turn")
+    def api_arcade_ai_turn(session_id: int, payload: ArcadeAiPayload | None = None) -> dict[str, Any]:
+        try:
+            return play_arcade_ai_turn(con, session_id, backend_override=payload.backend if payload else None)
+        except ArcadeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/browser-capture")
     def api_browser_capture(payload: BrowserCaptureRequest) -> dict[str, Any]:

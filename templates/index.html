@@ -47,6 +47,7 @@
         <button data-view-target="projects"><span class="nav-icon">P</span><span>Projects</span></button>
         <button data-view-target="chat"><span class="nav-icon">AI</span><span>Chat</span></button>
         <button data-view-target="council"><span class="nav-icon">CM</span><span>Council Mode</span></button>
+        <button data-view-target="arcade"><span class="nav-icon">G</span><span>Arcade</span></button>
         <button data-view-target="insights"><span class="nav-icon">A</span><span>Insights</span></button>
         <button data-view-target="replay"><span class="nav-icon">R</span><span>Replay</span></button>
         <button data-view-target="tags"><span class="nav-icon">T</span><span>Tags</span></button>
@@ -106,6 +107,7 @@
               <div class="feature-card" data-view-target="projects"><strong>Projects</strong><span>Group conversations and notes into focused workspaces.</span></div>
               <div class="feature-card" data-view-target="chat"><strong>AI Chat</strong><span>Ask a configured backend from the UI.</span></div>
               <div class="feature-card" data-view-target="council"><strong>Council Mode</strong><span>Compare OpenAI, Anthropic, and Ollama.</span></div>
+              <div class="feature-card" data-view-target="arcade"><strong>Memory Arcade</strong><span>Play, coach, and compare models in validated games.</span></div>
               <div class="feature-card" data-view-target="replay"><strong>Timeline Replay</strong><span>Play conversations back in order.</span></div>
               <div class="feature-card" data-view-target="tags"><strong>Tags</strong><span>Create and search message tags.</span></div>
               <div class="feature-card" data-view-target="insights"><strong>Analytics</strong><span>Summaries, themes, and follow-ups.</span></div>
@@ -322,6 +324,61 @@
                 <div id="councilOut" class="output muted" style="margin-top:12px;">No council session yet.</div>
               </div>
             </article>
+          </section>
+
+          <section id="view-arcade" class="view">
+            <div class="panel-grid">
+              <article class="panel arcade-control-panel">
+                <div class="panel-header"><h2>Memory Arcade</h2><button id="arcadeStartBtn" class="primary">Start</button></div>
+                <div class="panel-body">
+                  <div class="form-grid three">
+                    <div class="field"><label>Game</label><select id="arcadeGame"><option value="tictactoe">Tic-tac-toe</option><option value="connect4">Connect 4</option><option value="checkers">Checkers</option></select></div>
+                    <div class="field"><label>Mode</label><select id="arcadeMode"><option value="user_vs_ai">User vs AI</option><option value="ai_vs_ai">AI vs AI Arena</option><option value="replay">Replay</option></select></div>
+                    <div class="field"><label>Project memory</label><select id="arcadeProject"><option value="">No project boost</option></select></div>
+                    <div class="field"><label>AI 1</label><select id="arcadeP1Backend"><option value="openai">OpenAI</option><option value="anthropic">Claude</option><option value="ollama">Ollama</option></select></div>
+                    <div class="field"><label>AI 2</label><select id="arcadeP2Backend"><option value="anthropic">Claude</option><option value="openai">OpenAI</option><option value="ollama">Ollama</option></select></div>
+                    <label class="check-row"><input id="arcadeMemoryBoost" type="checkbox" /> Memory Boost</label>
+                  </div>
+                  <div class="action-row" style="margin-top:12px;">
+                    <button id="arcadeAiTurnBtn">Run AI Turn</button>
+                    <button id="arcadeAutoBtn">Auto-run Arena</button>
+                    <button id="arcadeReplayBtn" class="ghost">Play Replay</button>
+                    <button id="arcadeRefreshBtn" class="ghost">Refresh</button>
+                  </div>
+                  <div id="arcadeStatus" class="output muted" style="margin-top:12px;">Choose a game and start a session.</div>
+                </div>
+              </article>
+
+              <article class="panel arcade-board-panel">
+                <div class="panel-header"><h2 id="arcadeBoardTitle">Board</h2><span id="arcadeBoardMeta" class="muted mini"></span></div>
+                <div class="panel-body">
+                  <div id="arcadeBoard" class="arcade-board empty">No active game.</div>
+                  <div id="arcadeLegalMoves" class="badge-row arcade-legal"></div>
+                </div>
+              </article>
+            </div>
+
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Move Log</h2></div>
+                <div class="panel-body"><div id="arcadeMoves" class="list"></div></div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2>Coach Commentary</h2></div>
+                <div class="panel-body"><div id="arcadeCoach" class="output muted">AI explanations and fallback notes will appear here.</div></div>
+              </article>
+            </div>
+
+            <div class="panel-grid">
+              <article class="panel">
+                <div class="panel-header"><h2>Recent Sessions</h2></div>
+                <div class="panel-body"><div id="arcadeSessions" class="list"></div></div>
+              </article>
+              <article class="panel">
+                <div class="panel-header"><h2>Scoreboard</h2></div>
+                <div class="panel-body"><div id="arcadeScoreboard" class="list"></div></div>
+              </article>
+            </div>
           </section>
 
           <section id="view-insights" class="view">

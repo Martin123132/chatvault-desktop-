@@ -7,6 +7,9 @@ const state = {
   selectedConversationId: null,
   selectedProjectId: null,
   currentChatId: null,
+  arcadeSession: null,
+  arcadeSessions: [],
+  arcadeReplayTimer: null,
   replayMessages: [],
   replayTimer: null,
 };
@@ -77,6 +80,7 @@ function switchView(name) {
     btn.classList.toggle('active', btn.dataset.viewTarget === name && btn.closest('.nav'));
   });
   if (name === 'doctor') loadDoctor();
+  if (name === 'arcade') loadArcade();
 }
 
 function initialView() {
@@ -320,10 +324,14 @@ async function loadProjects() {
 }
 
 function renderProjectOptions() {
-  const selects = [$('askProject'), $('projectSelect')].filter(Boolean);
+  const selects = [$('askProject'), $('projectSelect'), $('arcadeProject')].filter(Boolean);
   selects.forEach((select) => {
     const current = select.value;
-    const first = select.id === 'askProject' ? '<option value="">Entire vault</option>' : '<option value="">Choose project</option>';
+    const first = select.id === 'askProject'
+      ? '<option value="">Entire vault</option>'
+      : select.id === 'arcadeProject'
+        ? '<option value="">No project boost</option>'
+        : '<option value="">Choose project</option>';
     select.innerHTML = first;
     state.projects.forEach((project) => {
       const opt = document.createElement('option');
@@ -741,6 +749,353 @@ async function runCouncil() {
   }
 }
 
+function backendLabel(backend) {
+  return { openai: 'OpenAI', anthropic: 'Claude', ollama: 'Ollama' }[backend] || backend || 'AI';
+}
+
+async function loadArcade() {
+  await Promise.all([loadArcadeSessions(), loadArcadeScoreboard()]);
+  renderArcadeProjectOptions();
+  if (!state.arcadeSession && state.arcadeSessions.length) {
+    state.arcadeSession = await jget(`/api/arcade/sessions/${state.arcadeSessions[0].id}`);
+  }
+  renderArcade();
+}
+
+function renderArcadeProjectOptions() {
+  const select = $('arcadeProject');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">No project boost</option>';
+  state.projects.forEach((project) => {
+    const opt = document.createElement('option');
+    opt.value = project.id;
+    opt.textContent = project.name;
+    select.appendChild(opt);
+  });
+  select.value = current;
+}
+
+async function loadArcadeSessions() {
+  const data = await jget('/api/arcade/sessions?limit=12');
+  state.arcadeSessions = data.sessions || [];
+  renderArcadeSessions();
+}
+
+async function loadArcadeScoreboard() {
+  const data = await jget('/api/arcade/scoreboard');
+  renderArcadeScoreboard(data);
+}
+
+function arcadeCreatePayload() {
+  const gameId = $('arcadeGame').value;
+  const mode = $('arcadeMode').value;
+  const p1Backend = $('arcadeP1Backend').value;
+  const p2Backend = $('arcadeP2Backend').value;
+  const projectId = Number($('arcadeProject').value || 0) || null;
+  if (mode === 'ai_vs_ai') {
+    return {
+      game_id: gameId,
+      mode,
+      p1_type: 'ai',
+      p1_backend: p1Backend,
+      p1_label: backendLabel(p1Backend),
+      p2_type: 'ai',
+      p2_backend: p2Backend,
+      p2_label: backendLabel(p2Backend),
+      project_id: projectId,
+      memory_boost: $('arcadeMemoryBoost').checked,
+    };
+  }
+  return {
+    game_id: gameId,
+    mode: 'user_vs_ai',
+    p1_type: 'user',
+    p1_backend: null,
+    p1_label: 'You',
+    p2_type: 'ai',
+    p2_backend: p2Backend,
+    p2_label: backendLabel(p2Backend),
+    project_id: projectId,
+    memory_boost: $('arcadeMemoryBoost').checked,
+  };
+}
+
+async function startArcadeSession() {
+  if ($('arcadeMode').value === 'replay') {
+    const recent = state.arcadeSessions.find((session) => session.status === 'complete') || state.arcadeSessions[0];
+    if (!recent) return showToast('No arcade replay is available yet.', true);
+    return loadArcadeSession(recent.id);
+  }
+  const btn = $('arcadeStartBtn');
+  setBusy(btn, true, 'Starting...');
+  try {
+    state.arcadeSession = await jpost('/api/arcade/sessions', arcadeCreatePayload());
+    renderArcade();
+    showToast('Arcade session started.');
+    if ($('arcadeMode').value === 'ai_vs_ai') await runArcadeAiTurn();
+    await loadArcadeSessions();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function loadArcadeSession(id) {
+  state.arcadeSession = await jget(`/api/arcade/sessions/${id}`);
+  renderArcade();
+  switchView('arcade');
+}
+
+function renderArcade() {
+  const session = state.arcadeSession;
+  if (!session) {
+    $('arcadeBoardTitle').textContent = 'Board';
+    $('arcadeBoardMeta').textContent = '';
+    $('arcadeBoard').className = 'arcade-board empty';
+    $('arcadeBoard').textContent = 'No active game.';
+    $('arcadeLegalMoves').innerHTML = '';
+    $('arcadeMoves').innerHTML = '<div class="muted">No moves yet.</div>';
+    $('arcadeCoach').textContent = 'AI explanations and fallback notes will appear here.';
+    return;
+  }
+  const player = session.state.current_player;
+  const playerLabel = session.players[player]?.label || player;
+  const winner = session.winner === 'draw' ? 'Draw' : (session.players[session.winner]?.label || '');
+  $('arcadeBoardTitle').textContent = `${session.game_label} #${session.id}`;
+  $('arcadeBoardMeta').textContent = session.status === 'complete' ? `Complete - ${winner}` : `${playerLabel} to move`;
+  $('arcadeStatus').textContent = session.status === 'complete'
+    ? `Game complete. Result: ${winner || 'unknown'}. Saved as conversation #${session.conversation_id || 'pending'}.`
+    : `${playerLabel} to move. ${session.mode === 'ai_vs_ai' ? 'Arena mode is ready.' : ''}`;
+  renderArcadeBoard(session);
+  renderArcadeMoves(session);
+}
+
+function currentArcadeActorIsUser(session) {
+  const player = session.state.current_player;
+  return session.status === 'active' && session.players[player]?.type === 'user';
+}
+
+function renderArcadeBoard(session) {
+  if (session.game_id === 'tictactoe') return renderTictactoe(session);
+  if (session.game_id === 'connect4') return renderConnect4(session);
+  return renderCheckers(session);
+}
+
+function renderTictactoe(session) {
+  const board = $('arcadeBoard');
+  board.className = 'arcade-board tictactoe-board';
+  board.innerHTML = '';
+  (session.state.board || []).forEach((value, index) => {
+    const btn = document.createElement('button');
+    btn.className = `arcade-cell ${value || ''}`;
+    btn.textContent = value === 'p1' ? 'X' : value === 'p2' ? 'O' : '';
+    btn.disabled = !currentArcadeActorIsUser(session) || Boolean(value);
+    btn.addEventListener('click', () => submitArcadeMove({ cell: index }));
+    board.appendChild(btn);
+  });
+  renderArcadeLegalMoves([]);
+}
+
+function renderConnect4(session) {
+  const board = $('arcadeBoard');
+  board.className = 'arcade-board connect4-board';
+  board.innerHTML = '';
+  (session.state.board || []).forEach((row) => {
+    row.forEach((value, column) => {
+      const btn = document.createElement('button');
+      btn.className = `arcade-disc ${value || ''}`;
+      btn.disabled = !currentArcadeActorIsUser(session);
+      btn.addEventListener('click', () => submitArcadeMove({ column }));
+      btn.innerHTML = `<span>${value === 'p1' ? '1' : value === 'p2' ? '2' : ''}</span>`;
+      board.appendChild(btn);
+    });
+  });
+  renderArcadeLegalMoves(session.legal_moves || []);
+}
+
+function checkersSquareNumber(row, col) {
+  if ((row + col) % 2 === 0) return null;
+  return row * 4 + Math.floor(col / 2) + 1;
+}
+
+function renderCheckers(session) {
+  const board = $('arcadeBoard');
+  board.className = 'arcade-board checkers-board';
+  board.innerHTML = '';
+  const pieces = session.state.board || [];
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 8; col += 1) {
+      const square = document.createElement('div');
+      const num = checkersSquareNumber(row, col);
+      square.className = `checkers-square ${num ? 'dark' : 'light'}`;
+      if (num) {
+        square.dataset.square = num;
+        const value = pieces[num - 1] || 0;
+        if (value) {
+          const piece = document.createElement('span');
+          piece.className = `checker-piece ${value < 0 ? 'p1' : 'p2'}`;
+          piece.textContent = Math.abs(value) === 2 ? 'K' : '';
+          square.appendChild(piece);
+        }
+      }
+      board.appendChild(square);
+    }
+  }
+  renderArcadeLegalMoves(session.legal_moves || []);
+}
+
+function renderArcadeLegalMoves(moves) {
+  const box = $('arcadeLegalMoves');
+  box.innerHTML = '';
+  if (!moves.length || !state.arcadeSession || !currentArcadeActorIsUser(state.arcadeSession)) return;
+  moves.slice(0, 28).forEach((move) => {
+    const btn = document.createElement('button');
+    btn.className = 'badge';
+    btn.textContent = move.move || `Column ${Number(move.column) + 1}`;
+    btn.addEventListener('click', () => submitArcadeMove(move));
+    box.appendChild(btn);
+  });
+}
+
+async function submitArcadeMove(move) {
+  if (!state.arcadeSession) return;
+  try {
+    state.arcadeSession = await jpost(`/api/arcade/sessions/${state.arcadeSession.id}/move`, { move });
+    renderArcade();
+    await loadArcadeSessions();
+    await loadArcadeScoreboard();
+    if (state.arcadeSession.status === 'active' && !currentArcadeActorIsUser(state.arcadeSession)) {
+      await runArcadeAiTurn();
+    }
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+async function runArcadeAiTurn() {
+  if (!state.arcadeSession || state.arcadeSession.status !== 'active') return;
+  const btn = $('arcadeAiTurnBtn');
+  setBusy(btn, true, 'Thinking...');
+  try {
+    state.arcadeSession = await jpost(`/api/arcade/sessions/${state.arcadeSession.id}/ai-turn`, {});
+    renderArcade();
+    await loadArcadeSessions();
+    await loadArcadeScoreboard();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function autoRunArcade() {
+  if (!state.arcadeSession) return showToast('Start or load an arcade session first.', true);
+  const btn = $('arcadeAutoBtn');
+  setBusy(btn, true, 'Running...');
+  try {
+    while (state.arcadeSession?.status === 'active') {
+      const player = state.arcadeSession.state.current_player;
+      if (state.arcadeSession.players[player]?.type !== 'ai') break;
+      state.arcadeSession = await jpost(`/api/arcade/sessions/${state.arcadeSession.id}/ai-turn`, {});
+      renderArcade();
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
+    }
+    await loadArcadeSessions();
+    await loadArcadeScoreboard();
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+function renderArcadeMoves(session) {
+  const list = $('arcadeMoves');
+  list.innerHTML = '';
+  const moves = session.moves || [];
+  if (!moves.length) {
+    list.innerHTML = '<div class="muted">No moves yet.</div>';
+  } else {
+    moves.forEach((move) => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      const label = session.players[move.player]?.label || move.player;
+      div.innerHTML = `
+        <div class="item-title">#${move.move_number} ${escapeHtml(label)} ${escapeHtml(JSON.stringify(move.move))}</div>
+        <div class="muted mini">${escapeHtml(move.backend || move.actor_type)} - ${move.elapsed_ms || 0}ms - invalid attempts ${move.invalid_attempts || 0}</div>
+        ${move.explanation ? `<div class="item-text">${escapeHtml(move.explanation)}</div>` : ''}
+      `;
+      list.appendChild(div);
+    });
+  }
+  const last = moves[moves.length - 1];
+  $('arcadeCoach').textContent = last?.explanation || 'AI explanations and fallback notes will appear here.';
+}
+
+function renderArcadeSessions() {
+  const list = $('arcadeSessions');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!state.arcadeSessions.length) {
+    list.innerHTML = '<div class="muted">No arcade sessions yet.</div>';
+    return;
+  }
+  state.arcadeSessions.forEach((session) => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <div class="item-head">
+        <div>
+          <div class="item-title">#${session.id} ${escapeHtml(session.title)}</div>
+          <div class="muted mini">${escapeHtml(session.status)} ${session.winner ? `- ${escapeHtml(session.winner)}` : ''}</div>
+        </div>
+        <button class="ghost">Load</button>
+      </div>
+    `;
+    div.querySelector('button').addEventListener('click', () => loadArcadeSession(session.id));
+    list.appendChild(div);
+  });
+}
+
+function renderArcadeScoreboard(data) {
+  const list = $('arcadeScoreboard');
+  if (!list) return;
+  const rows = data.rows || [];
+  list.innerHTML = '';
+  if (!rows.length) {
+    list.innerHTML = '<div class="muted">No results yet.</div>';
+    return;
+  }
+  rows.slice(0, 12).forEach((row) => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <div class="item-title">${escapeHtml(row.game_id)} - ${escapeHtml(row.status)}</div>
+      <div class="muted mini">Winner: ${escapeHtml(row.winner || 'pending')} - ${row.count} session(s)</div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function playArcadeReplay() {
+  window.clearTimeout(state.arcadeReplayTimer);
+  const session = state.arcadeSession;
+  if (!session || !(session.moves || []).length) return showToast('Load a session with moves first.', true);
+  const frames = [session.moves[0].board_before].concat(session.moves.map((move) => move.board_after));
+  let index = 0;
+  const tick = () => {
+    const frame = frames[index++];
+    state.arcadeSession = { ...session, state: frame };
+    renderArcadeBoard(state.arcadeSession);
+    $('arcadeBoardMeta').textContent = `Replay ${index}/${frames.length}`;
+    if (index < frames.length) state.arcadeReplayTimer = window.setTimeout(tick, 650);
+    else state.arcadeSession = session;
+  };
+  tick();
+}
+
 async function createChat() {
   const data = await jpost('/api/chat', { title: $('chatTitle').value.trim() || 'New chat' });
   state.currentChatId = data.conversation_id;
@@ -1049,6 +1404,11 @@ function wireActions() {
   $('uploadImportBtn').addEventListener('click', importUpload);
   $('pathImportBtn').addEventListener('click', importPath);
   $('runCouncilBtn').addEventListener('click', runCouncil);
+  $('arcadeStartBtn').addEventListener('click', startArcadeSession);
+  $('arcadeAiTurnBtn').addEventListener('click', runArcadeAiTurn);
+  $('arcadeAutoBtn').addEventListener('click', autoRunArcade);
+  $('arcadeReplayBtn').addEventListener('click', playArcadeReplay);
+  $('arcadeRefreshBtn').addEventListener('click', loadArcade);
   $('newChatTop').addEventListener('click', () => { switchView('chat'); createChat(); });
   $('newChatBtn').addEventListener('click', createChat);
   $('sendChatBtn').addEventListener('click', sendChat);
