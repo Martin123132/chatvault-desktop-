@@ -79,6 +79,49 @@ CREATE TABLE IF NOT EXISTS workflows (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS arcade_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    title TEXT NOT NULL,
+    p1_type TEXT NOT NULL,
+    p1_backend TEXT,
+    p1_label TEXT NOT NULL,
+    p2_type TEXT NOT NULL,
+    p2_backend TEXT,
+    p2_label TEXT NOT NULL,
+    project_id INTEGER,
+    memory_boost INTEGER NOT NULL DEFAULT 0,
+    state_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    winner TEXT,
+    invalid_attempts INTEGER NOT NULL DEFAULT 0,
+    conversation_id INTEGER,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS arcade_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    move_number INTEGER NOT NULL,
+    player TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    backend TEXT,
+    move_json TEXT NOT NULL,
+    board_before_json TEXT NOT NULL,
+    board_after_json TEXT NOT NULL,
+    legal_moves_json TEXT NOT NULL,
+    explanation TEXT,
+    invalid_attempts INTEGER NOT NULL DEFAULT 0,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES arcade_sessions(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,          -- 'chatgpt_export' | 'api_chat'

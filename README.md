@@ -40,6 +40,7 @@ The dashboard includes UI screens for the main ChatVault commands:
 - Import Wizard: guided file, folder, and shared-link importing from one panel
 - Chat: start a new AI chat from the browser UI
 - Council Mode: ask OpenAI, Anthropic, and Ollama backends and store the synthesis
+- Memory Arcade: play Tic-tac-toe, Connect 4, and Checkers against OpenAI, Claude, or Ollama with validated moves, saved replays, and searchable game summaries
 - Insights: summaries and recommendation reports
 - Replay: timeline playback for saved conversations
 - Setup and Settings: save API keys, model choices, Ollama settings, first-run setup state, and offline mode without editing code
@@ -184,6 +185,16 @@ Ask the same question to multiple backends (OpenAI, Anthropic, Ollama) and store
 python chatvault.py council --question "How do we design a CPU?"
 
 All council messages are saved in a dedicated conversation.
+
+Memory Arcade
+
+Play and compare OpenAI, Anthropic, and Ollama backends across Tic-tac-toe, Connect 4, and Checkers from the Arcade screen.
+
+- User vs AI, AI vs AI Arena, and Replay modes
+- Rule validation before every user or model move
+- Model explanations, invalid-attempt tracking, timing, move logs, and scoreboard stats
+- Completed games saved back into ChatVault as searchable `arcade` conversations with tags
+- Optional Memory Boost for project-flavoured coaching and reflection without changing rule legality
 
 ⸻
 
