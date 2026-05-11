@@ -1,5 +1,5 @@
 #define MyAppName "ChatVault"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "ChatVault"
 #define MyAppExeName "ChatVault.exe"
 
@@ -17,7 +17,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 LicenseFile=MIT License
 OutputDir=dist\installer
 OutputBaseFilename=ChatVaultSetup
-SetupIconFile=dist\ChatVault.exe
+SetupIconFile=dist\ChatVault\ChatVault.exe
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -30,8 +30,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Files]
-Source: "dist\ChatVault.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\ChatVault\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist\chatvault-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "browser_extension\*"; DestDir: "{app}\browser_extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "MIT License"; DestDir: "{app}"; Flags: ignoreversion
 

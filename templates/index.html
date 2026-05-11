@@ -100,6 +100,18 @@
               </div>
             </div>
 
+            <article class="panel getting-started">
+              <div class="panel-header"><h2>Getting Started</h2><span class="muted mini">Four steps, no code editing.</span></div>
+              <div class="panel-body">
+                <div class="start-steps">
+                  <button data-view-target="doctor"><span class="nav-icon">D</span><span>Run Setup Doctor<small>Check Python, database, packages, and extension files</small></span></button>
+                  <button data-view-target="settings"><span class="nav-icon">K</span><span>Add API Keys<small>OpenAI, Claude, Ollama, and offline mode</small></span></button>
+                  <button data-view-target="imports"><span class="nav-icon">I</span><span>Import Or Capture Chats<small>Exports, files, shared links, and browser capture</small></span></button>
+                  <button data-view-target="arcade"><span class="nav-icon">G</span><span>Try Memory Arcade<small>Play and compare models with validated moves</small></span></button>
+                </div>
+              </div>
+            </article>
+
             <div class="feature-grid">
               <div class="feature-card" data-view-target="imports"><strong>Import Library</strong><span>ChatGPT, Claude, shared chats, and local files.</span></div>
               <div class="feature-card" data-view-target="search"><strong>Semantic Search</strong><span>Keyword or embedding-backed lookup.</span></div>
@@ -452,6 +464,11 @@
             <article class="panel">
               <div class="panel-header"><h2>Settings</h2><span id="settingsPath" class="muted mini"></span></div>
               <div class="panel-body">
+                <div class="runtime-grid">
+                  <div class="item"><div class="item-title">Dashboard URL</div><div id="settingsLocalUrl" class="item-text muted">Loading...</div></div>
+                  <div class="item"><div class="item-title">Capture Endpoint</div><div id="settingsCaptureEndpoint" class="item-text muted">Loading...</div></div>
+                  <div class="item"><div class="item-title">Database</div><div id="settingsDbPath" class="item-text muted">Loading...</div></div>
+                </div>
                 <div class="form-grid three">
                   <div class="field"><label>Default backend</label><select id="settingsBackend"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option></select></div>
                   <label class="check-row"><input id="settingsOffline" type="checkbox" /> Offline mode</label>

@@ -18,14 +18,20 @@ Nothing is uploaded. Nothing leaves your machine.
 ⸻
 ## Quick Start On Windows
 
-For the easiest path:
+Use one of these two paths.
+
+### Repo ZIP path
 
 1. Download the GitHub repo as a ZIP.
 2. Extract the ZIP.
 3. Open the extracted folder.
 4. Double-click `START_HERE_WINDOWS.bat`.
 
-The starter finds Python 3.10+, creates a private `.venv`, installs dependencies, starts ChatVault, and opens the local dashboard in your browser. If Python is not on PATH, set a `CHATVAULT_PYTHON` environment variable to the full `python.exe` path before launching.
+The starter finds Python 3.10+, creates a private `.venv`, repairs moved `.venv` metadata when possible, installs dependencies, starts ChatVault, and opens the local dashboard in your browser. If Python is not on PATH, set a `CHATVAULT_PYTHON` environment variable to the full `python.exe` path before launching.
+
+### Installer path
+
+If you have `ChatVaultSetup.exe`, run it and launch ChatVault from the Start Menu shortcut. The installer includes the desktop launcher, CLI, README, license, and browser extension files.
 
 ## In-App Features
 
@@ -94,8 +100,9 @@ On a Windows machine with Python 3.10+ and Inno Setup 6 installed:
 ```
 
 Artifacts:
-- `dist/ChatVault.exe` (desktop launcher, no console)
+- `dist/ChatVault/ChatVault.exe` (desktop launcher, no console)
 - `dist/chatvault-cli.exe` (CLI, console)
+- bundled app data: `templates/`, `static/`, and `browser_extension/`
 - `dist/installer/ChatVaultSetup.exe` (installer)
 
 If you only want EXEs (no installer):
@@ -104,12 +111,27 @@ If you only want EXEs (no installer):
 ./scripts/build_windows.ps1 -SkipInstaller
 ```
 
+For a faster desktop-only smoke build:
+
+```powershell
+./scripts/build_windows.ps1 -SkipInstaller -SkipCli
+```
+
 ### Data location
 By default ChatVault now stores SQLite data in a per-user app data folder:
 - Windows: `%LOCALAPPDATA%\ChatVault\chatvault.sqlite3`
 - Linux/macOS: `~/.local/share/chatvault/chatvault.sqlite3`
 
 You can still override with `--db` or `CHATVAULT_DB`.
+
+### Troubleshooting startup
+
+- **No Python found:** install Python 3.10 or newer from python.org, tick "Add python.exe to PATH", then run `START_HERE_WINDOWS.bat` again. If Python is installed but not detected, set `CHATVAULT_PYTHON` to the full `python.exe` path.
+- **Moved from C: to D: or another folder:** run `START_HERE_WINDOWS.bat` again. The starter repairs known `.venv` path metadata and recreates an incomplete private environment if needed.
+- **C: drive is full:** move the extracted repo to a roomier drive such as D:, then run the starter there. ChatVault warns when the current drive is low on free space during setup.
+- **Browser did not open:** copy the dashboard URL printed in the starter window, usually `http://127.0.0.1:8000`, into your browser.
+- **Port 8000 is busy:** ChatVault chooses another local port and prints the active dashboard URL plus the browser capture endpoint. Paste that endpoint into the extension popup if capture cannot connect.
+- **Extension cannot connect:** open Setup Doctor in ChatVault and copy the Browser capture endpoint shown there into the extension popup.
 
 
 ⸻

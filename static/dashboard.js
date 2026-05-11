@@ -295,6 +295,9 @@ async function loadSettings() {
   $('settingsOllamaHost').value = state.settings.ollama_host || '';
   $('settingsOllamaModel').value = state.settings.ollama_model || '';
   $('settingsPath').textContent = state.settings.env_file || '';
+  $('settingsLocalUrl').textContent = state.settings.local_url || 'Unknown until the dashboard is loaded.';
+  $('settingsCaptureEndpoint').textContent = state.settings.capture_endpoint || 'Unknown until the dashboard is loaded.';
+  $('settingsDbPath').textContent = state.settings.db_file || '';
   $('openaiKeyLabel').textContent = state.settings.openai_key_saved ? `OpenAI API key (${state.settings.openai_key_hint})` : 'OpenAI API key';
   $('anthropicKeyLabel').textContent = state.settings.anthropic_key_saved ? `Anthropic API key (${state.settings.anthropic_key_hint})` : 'Anthropic API key';
   if ($('setupBackend')) {

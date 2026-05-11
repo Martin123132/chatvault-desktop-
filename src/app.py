@@ -11,7 +11,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -474,7 +474,11 @@ def _ping_ollama(host: str | None) -> tuple[bool, str]:
     return True, "Ollama is running, but no local models were listed."
 
 
-def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
+def _base_url_from_request(request: Request) -> str:
+    return str(request.base_url).rstrip("/")
+
+
+def _setup_doctor_report(con: Any, db_file: str, root: Path, local_url: str | None = None) -> dict[str, Any]:
     settings = _settings_snapshot()
     items: list[dict[str, Any]] = []
 
@@ -516,6 +520,16 @@ def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
         items.append(_doctor_item("data_dir", "Data Folder", "ok", f"Writable at {data_dir}."))
     except Exception as exc:
         items.append(_doctor_item("data_dir", "Data Folder", "error", f"Could not write to data folder: {exc}"))
+
+    if local_url:
+        items.append(
+            _doctor_item(
+                "local_url",
+                "Local URL",
+                "ok",
+                f"Dashboard: {local_url}. Browser capture endpoint: {local_url}/api/browser-capture.",
+            )
+        )
 
     try:
         cur = con.cursor()
@@ -596,12 +610,21 @@ def _setup_doctor_report(con: Any, db_file: str, root: Path) -> dict[str, Any]:
             "browser_extension",
             "Browser Extension",
             "ok" if extension_ok else "warn",
-            "Browser extension files are present." if extension_ok else "Browser extension files were not found.",
+            f"Extension files are present at {root / 'browser_extension'}."
+            if extension_ok
+            else f"Browser extension files were not found at {root / 'browser_extension'}.",
         )
     )
 
     counts = {status: sum(1 for item in items if item["status"] == status) for status in ("ok", "warn", "error")}
-    return {"items": items, "counts": counts, "settings": settings}
+    return {
+        "items": items,
+        "counts": counts,
+        "settings": settings,
+        "db_file": db_file,
+        "local_url": local_url,
+        "capture_endpoint": f"{local_url}/api/browser-capture" if local_url else None,
+    }
 
 
 def _test_model_connection(payload: ModelTestPayload) -> dict[str, Any]:
@@ -802,11 +825,17 @@ def make_app(db_path: str | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/settings")
-    def api_get_settings() -> dict[str, Any]:
-        return _settings_snapshot()
+    def api_get_settings(request: Request) -> dict[str, Any]:
+        local_url = _base_url_from_request(request)
+        return {
+            **_settings_snapshot(),
+            "db_file": db_file,
+            "local_url": local_url,
+            "capture_endpoint": f"{local_url}/api/browser-capture",
+        }
 
     @app.get("/api/setup/status")
-    def api_setup_status() -> dict[str, Any]:
+    def api_setup_status(request: Request) -> dict[str, Any]:
         settings = _settings_snapshot()
         stats = get_archive_stats(con)
         has_model_connection = bool(
@@ -814,17 +843,21 @@ def make_app(db_path: str | None = None) -> FastAPI:
             or settings["anthropic_key_saved"]
             or settings["backend"] == "ollama"
         )
+        local_url = _base_url_from_request(request)
         return {
             "setup_complete": settings["setup_complete"],
             "needs_setup": not settings["setup_complete"],
             "has_model_connection": has_model_connection,
             "has_imported_data": int(stats["total_conversations"]) > 0,
             "settings": settings,
+            "db_file": db_file,
+            "local_url": local_url,
+            "capture_endpoint": f"{local_url}/api/browser-capture",
         }
 
     @app.get("/api/setup/doctor")
-    def api_setup_doctor() -> dict[str, Any]:
-        return _setup_doctor_report(con, db_file, root)
+    def api_setup_doctor(request: Request) -> dict[str, Any]:
+        return _setup_doctor_report(con, db_file, root, local_url=_base_url_from_request(request))
 
     @app.post("/api/settings")
     def api_save_settings(payload: SettingsPayload) -> dict[str, Any]:
