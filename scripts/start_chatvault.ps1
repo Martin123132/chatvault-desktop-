@@ -29,6 +29,17 @@ function Stop-Friendly {
     exit $Code
 }
 
+function Get-FreeSpaceGb {
+    param([string]$Path)
+    try {
+        $drive = Get-PSDrive -Name ([System.IO.Path]::GetPathRoot($Path).Substring(0, 1)) -ErrorAction Stop
+        return [math]::Round($drive.Free / 1GB, 2)
+    }
+    catch {
+        return $null
+    }
+}
+
 function Use-PythonCandidate {
     param(
         [string]$Command,
@@ -98,7 +109,7 @@ function Find-Python {
     Write-Host "No usable Python 3.10+ install was found." -ForegroundColor Yellow
     Write-Host "Opening the Python for Windows download page now."
     Start-Process "https://www.python.org/downloads/windows/"
-    Stop-Friendly "Install Python 3.10 or newer, tick 'Add python.exe to PATH' during setup, then double-click START_HERE_WINDOWS.bat again. If needed, set CHATVAULT_PYTHON to your python.exe path."
+    Stop-Friendly "Install Python 3.10 or newer, tick 'Add python.exe to PATH' during setup, then double-click START_HERE_WINDOWS.bat again. If Python is already installed, set CHATVAULT_PYTHON to the full path of python.exe and run this starter again."
 }
 
 function Invoke-HostPython {
@@ -163,18 +174,30 @@ try {
 
     $venvPython = Join-Path $script:RepoRoot ".venv\Scripts\python.exe"
     $venvRoot = Join-Path $script:RepoRoot ".venv"
+    if ((Test-Path -LiteralPath $venvRoot) -and !(Test-Path -LiteralPath $venvPython)) {
+        Write-Section "Repairing incomplete private environment"
+        $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $backup = Join-Path $script:RepoRoot ".venv.broken-$stamp"
+        Move-Item -LiteralPath $venvRoot -Destination $backup
+        Write-Host "Moved broken .venv to $backup"
+    }
+
     if (!(Test-Path -LiteralPath $venvPython)) {
         Write-Section "Creating a private Python environment"
+        $freeGb = Get-FreeSpaceGb -Path $script:RepoRoot
+        if ($null -ne $freeGb -and $freeGb -lt 2) {
+            Write-Host "Warning: only $freeGb GB is free on this drive. Dependency installs may fail if the drive fills up." -ForegroundColor Yellow
+        }
         Invoke-HostPython -m venv ".venv"
         if ($LASTEXITCODE -ne 0) {
-            Stop-Friendly "Python could not create the .venv environment."
+            Stop-Friendly "Python could not create the .venv environment in $script:RepoRoot. Check that this folder is writable and that the drive has free space, then run START_HERE_WINDOWS.bat again."
         }
     }
 
     Repair-MovedVenv -VenvRoot $venvRoot
 
     if (!(Test-Path -LiteralPath $venvPython)) {
-        Stop-Friendly "The .venv Python executable was not created where expected: $venvPython"
+        Stop-Friendly "The private environment is still missing its Python executable: $venvPython. Delete the .venv folder and run START_HERE_WINDOWS.bat again, or set CHATVAULT_PYTHON to a working python.exe path."
     }
 
     if (-not $SkipDependencyInstall) {
@@ -189,14 +212,18 @@ try {
         if ($currentHash -ne $wantedHash) {
             Write-Section "Installing ChatVault dependencies"
             Write-Host "First run can take several minutes, especially on slower connections."
+            $freeGb = Get-FreeSpaceGb -Path $script:RepoRoot
+            if ($null -ne $freeGb -and $freeGb -lt 3) {
+                Write-Host "Warning: only $freeGb GB is free on this drive. If install fails, move the repo to a roomier drive and rerun this starter." -ForegroundColor Yellow
+            }
             & $venvPython -m pip install --upgrade pip
             if ($LASTEXITCODE -ne 0) {
-                Stop-Friendly "Pip could not be upgraded."
+                Stop-Friendly "Pip could not be upgraded. Check your internet connection, antivirus prompts, and free disk space, then run START_HERE_WINDOWS.bat again."
             }
 
             & $venvPython -m pip install -r $requirements
             if ($LASTEXITCODE -ne 0) {
-                Stop-Friendly "Dependency installation failed. Check your internet connection, then run START_HERE_WINDOWS.bat again."
+                Stop-Friendly "Dependency installation failed while running: $venvPython -m pip install -r $requirements. Check your internet connection and free disk space, then run START_HERE_WINDOWS.bat again."
             }
 
             Set-Content -LiteralPath $marker -Value $wantedHash -Encoding ascii
