@@ -14,7 +14,7 @@ AllowNoIcons=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-LicenseFile=MIT License
+LicenseFile=LICENSE.md
 OutputDir=dist\installer
 OutputBaseFilename=ChatVaultSetup
 SetupIconFile=dist\ChatVault\ChatVault.exe
@@ -34,7 +34,7 @@ Source: "dist\ChatVault\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 Source: "dist\chatvault-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "browser_extension\*"; DestDir: "{app}\browser_extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "MIT License"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

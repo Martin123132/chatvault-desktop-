@@ -334,7 +334,7 @@ PRs, ideas, and feature requests are welcome — especially:
 
 📝 License
 
-MIT License.
+PolyForm Noncommercial License 1.0.0. Commercial use requires a separate written license.
 See the included file for full text.
 
 ⸻
