@@ -8,7 +8,7 @@ Examples that require a commercial license:
 
 - adding chatvault-desktop- features to a paid coding assistant or AI agent product;
 - running chatvault-desktop- as part of a SaaS, API, hosted MCP server, or managed repository-analysis service;
-- embedding chatvault-desktop- code, schemas, tests, pack format, or derived implementation details into a commercial tool;
+- embedding chatvault-desktop- code, schemas, tests, formats, or derived implementation details into a commercial tool;
 - using chatvault-desktop- materials to train, fine-tune, distill, evaluate, benchmark, or improve a commercial AI model or commercial AI system;
 - distributing a modified commercial version of chatvault-desktop-.
 
